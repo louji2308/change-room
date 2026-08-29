@@ -1,0 +1,12 @@
+packages:
+  - "apps/**"
+  - "!apps/backend/.medusa/**"
+
+onlyBuiltDependencies:
+  - "@medusajs/telemetry"
+  - "@swc/core"
+  - esbuild
+  - msgpackr-extract
+  - protobufjs
+  - sharp
+  - unrs-resolver
