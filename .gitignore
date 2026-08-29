@@ -16,6 +16,9 @@ node_modules
 # Testing
 coverage
 
+# Playwright MCP browser test artifacts
+.playwright-mcp/
+
 # Next.js
 **/.next/
 **/out/
