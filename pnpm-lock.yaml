@@ -222,6 +222,19 @@ importers:
         specifier: ^5.3.2
         version: 5.9.3
 
+  packages/simulator:
+    dependencies:
+      '@change-room/state':
+        specifier: workspace:*
+        version: link:../state
+    devDependencies:
+      '@types/node':
+        specifier: ^17.0.21
+        version: 17.0.21
+      typescript:
+        specifier: ^5.1.0
+        version: 5.9.3
+
   packages/state:
     devDependencies:
       '@types/node':

@@ -39,12 +39,28 @@
 - [x] Verified adapter against live Medusa (4 published products read, inventory synced, API reachable)
 - [x] Chrome DevTools checkpoint: no regressions, storefront clean
 
-### PHASE 2 — Build the operational simulator — ⏳ NEXT
+### PHASE 2 — Build the operational simulator — ✅ COMPLETE
 
-Guided by the discrete-event, causal world-model design in `Simulator.md`:
-world generator + disturbance generator + event loop + causal engine + observability,
-with prediction/execution isolation.
+Guided by the discrete-event, causal world-model design in `Simulator.md`.
 
-### PHASE 3+ — Scenario engine, Change Room UI, Change Control, Agent, WebMCP, etc.
+- [x] Kernel (`packages/simulator/src/kernel/`): seeded RNG (`mulberry32`), simulation clock, discrete-event scheduler (min-heap)
+- [x] World model (`src/world/`): e-commerce topology + dependency graph (traffic → gateway → checkout/search → cache/queue/inventory/payment → database → orders), mutable world state with versioning, world tuning (traffic level + capacity/latency modifiers)
+- [x] Behavior models (`src/causal/rules.ts`): threshold + saturation curves for latency/error, queues, backpressure (nonlinear, not fake numbers)
+- [x] Causal engine (`src/causal/engine.ts`): load propagation + *cache-miss→DB-hit* dynamic + end-to-end latency/error propagation + constraint enforcement
+- [x] Constraints (`src/causal/constraints.ts`): rejects/repairs impossible worlds (utilization 0..100, non-negative, latency ≥ idle)
+- [x] Disturbance generator (`src/disturbances/`): seeded, constrained stochastic combinations of primitives + canonical cache-degradation signature demo; ramps in over time
+- [x] Actions (`src/actions/`): formal action model (type/target/params/preconditions/affected/reversibility/risk) — increase_cache_capacity, restart_cache, scale_service, scale_database, rollback_deployment, change_configuration, restore_configuration, do_nothing
+- [x] Prediction branch (`src/prediction/`): deep-clones world+tuning, applies action, simulates forward — hard isolation from execution world
+- [x] Observability (`src/observability/`): metrics, logs, events, business KPIs all *derived* from state (never hardcoded)
+- [x] Orchestrator (`src/simulator.ts`): build world → run to stability baseline → inject disturbances → observe / predict / validate
+- [x] Verified signature demo: baseline healthy (checkout 61ms / 0.1% errors) → cache degradation drives cache util 53→96%, checkout latency 61→130ms, errors 0.1→23.6%, system health healthy→down; remediation action predicts recovery (62ms / 0.1% errors)
+- [x] Tests (17 passing): causal rules, determinism (same seed→same prediction), isolation (predict never mutates execution world), regression (real sandbox unchanged after prediction), action rejection, constraints, reproducibility
+- [x] Verified real Medusa adapter reads unaffected
+
+### PHASE 3 — Scenario engine — ⏳ NEXT
+
+Blind, reproducible hidden problems: scenario definitions, injectors, hidden ground truth, reset-to-baseline.
+
+### PHASE 4+ — Change Room UI, Change Control, Agent, WebMCP, etc.
 
 Not yet started. See `Implementation.md` for the full 26-phase plan.
