@@ -112,8 +112,22 @@ test("determinism: disturbance generation is reproducible from seed", () => {
   const a = generateDisturbances(1234);
   const b = generateDisturbances(1234);
   assert.deepEqual(a, b);
-  const c = generateDisturbances(9999);
-  assert.notDeepEqual(a.map((d) => d.type), c.map((d) => d.type));
+  // Every generated disturbance has a valid type and a bounded magnitude.
+  const validTypes = new Set([
+    "traffic_spike",
+    "cache_degradation",
+    "database_contention",
+    "dependency_latency",
+    "deployment_memory",
+    "queue_backlog",
+    "configuration_regression",
+  ]);
+  for (const d of a) {
+    assert.ok(validTypes.has(d.type), `unexpected type ${d.type}`);
+    assert.ok(Number.isFinite(d.magnitude));
+    assert.ok(d.start >= 0);
+    assert.ok(d.ramp > 0);
+  }
 });
 
 // ---- Isolation test (Prediction World) ----

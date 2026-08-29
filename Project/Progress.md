@@ -57,10 +57,18 @@ Guided by the discrete-event, causal world-model design in `Simulator.md`.
 - [x] Tests (17 passing): causal rules, determinism (same seed→same prediction), isolation (predict never mutates execution world), regression (real sandbox unchanged after prediction), action rejection, constraints, reproducibility
 - [x] Verified real Medusa adapter reads unaffected
 
-### PHASE 3 — Scenario engine — ⏳ NEXT
+### PHASE 3 — Scenario engine — ✅ COMPLETE
 
-Blind, reproducible hidden problems: scenario definitions, injectors, hidden ground truth, reset-to-baseline.
+`packages/scenarios` delivers blind, reproducible hidden problems.
 
-### PHASE 4+ — Change Room UI, Change Control, Agent, WebMCP, etc.
+- [x] 6 named blind scenarios: `cache-failure`, `traffic-surge`, `database-saturation`, `bad-deployment`, `queue-backlog`, `configuration-regression`
+- [x] Hidden, reversible ground truth (fully reversible to a clean baseline)
+- [x] Injection strictly through the causal model (never arbitrary dashboard writes)
+- [x] `reset()` to clean baseline
+- [x] 2 new disturbance primitives in `packages/simulator`: `queue_backlog` and `configuration_regression` (added to `DisturbanceType` union, `MAGNITUDE_RANGES`, `pickCombination` pool, `describe()`, `computeTuningAt()`)
+- [x] Blindness guarantees: `agentView()` strips seed/disturbances/magnitude/cause; `session()` uses an opaque non-reversible hash id (no seed leak); `groundTruth()` is the sole admin-gated accessor; `reset()` returns void (never hands back the raw simulator); `evaluate()` never returns ground truth
+- [x] Tests (10 scenario + 17 simulator passing)
+
+### PHASE 4 — Change Room UI, Change Control, Agent, WebMCP, etc. — ⏳ NEXT
 
 Not yet started. See `Implementation.md` for the full 26-phase plan.

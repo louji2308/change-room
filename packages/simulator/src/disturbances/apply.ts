@@ -69,6 +69,17 @@ export function computeTuningAt(
           (base.capacityMultiplier["api-gateway"] ?? 1) * (1 - 0.15 * f);
         break;
       }
+      case "queue_backlog": {
+        const clamped = 1 + (d.magnitude - 1) * f;
+        out.capacityMultiplier.queue = (base.capacityMultiplier.queue ?? 1) * clamped;
+        break;
+      }
+      case "configuration_regression": {
+        const clamped = 1 + (d.magnitude - 1) * f;
+        out.capacityMultiplier.database = (base.capacityMultiplier.database ?? 1) * clamped;
+        out.latencyModifier.database = (base.latencyModifier.database ?? 0) + 40 * f;
+        break;
+      }
     }
   }
 

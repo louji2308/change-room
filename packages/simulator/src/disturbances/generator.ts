@@ -13,7 +13,9 @@ export type DisturbanceType =
   | "cache_degradation"
   | "database_contention"
   | "dependency_latency"
-  | "deployment_memory";
+  | "deployment_memory"
+  | "queue_backlog"
+  | "configuration_regression";
 
 export interface Disturbance {
   id: string;
@@ -36,6 +38,8 @@ const MAGNITUDE_RANGES: Record<DisturbanceType, [number, number]> = {
   database_contention: [0.6, 0.9], // DB capacity multiplier
   dependency_latency: [120, 400], // extra ms on payment
   deployment_memory: [1.4, 2.4], // api-gateway latency multiplier effect
+  queue_backlog: [0.35, 0.6], // queue capacity multiplier down 35..60%
+  configuration_regression: [0.7, 0.9], // database capacity regression offset
 };
 
 function pickCombination(rng: SeededRng): DisturbanceType[] {
@@ -45,6 +49,8 @@ function pickCombination(rng: SeededRng): DisturbanceType[] {
     "database_contention",
     "dependency_latency",
     "deployment_memory",
+    "queue_backlog",
+    "configuration_regression",
   ];
   // Generate a plausible environment with 1..3 co-occurring primitives.
   const count = rng.int(1, 3);
@@ -100,6 +106,10 @@ function describe(type: DisturbanceType, magnitude: number): string {
       return `payment dependency adds ${magnitude}ms latency`;
     case "deployment_memory":
       return `deployment creates memory pressure ${Math.round(magnitude * 100)}% on the gateway`;
+    case "queue_backlog":
+      return `background queue capacity drops to ${Math.round(magnitude * 100)}%`;
+    case "configuration_regression":
+      return `configuration drift reduces database pool to ${Math.round(magnitude * 100)}% and adds latency`;
   }
 }
 
