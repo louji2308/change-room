@@ -153,3 +153,26 @@ test("evaluate() scores operator decisions against expected recovery", () => {
   assert.ok(res.score > 0);
   assert.ok(res.session.scenarioId.startsWith("scenario-"));
 });
+
+test("executeChange() remediates cache failure on the live execution world", () => {
+  const runner = runScenario("cache-failure");
+  assert.equal(runner.agentView().health, "down");
+
+  const res = runner.executeChange("increase_cache_capacity", { newCapacityGB: 30 });
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.unmet, []);
+
+  // let the remediated world settle and verify it recovers
+  runner.settle(30);
+  assert.equal(runner.health(), "healthy");
+});
+
+test("executeChange() reports unmet preconditions and does not recover", () => {
+  const runner = runScenario("cache-failure");
+  // a no-op action will not remediate
+  const res = runner.executeChange("do_nothing", {});
+  assert.equal(res.ok, true);
+  runner.settle(30);
+  assert.notEqual(runner.health(), "healthy");
+});
+

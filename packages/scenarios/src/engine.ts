@@ -2,6 +2,10 @@ import {
   WorldSimulator,
   type Disturbance,
   type MetricSeries,
+  type ActionType,
+  createAction,
+  applyAction,
+  computeTuningAt,
 } from "@change-room/simulator";
 import type { AgentView, GroundTruth, ScenarioSession } from "./types.js";
 import { getScenario } from "./registry.js";
@@ -38,7 +42,7 @@ export class ScenarioRunner {
     const sim = new WorldSimulator({
       seed: def.seed,
       scenario: "random",
-      disturbances: def.disturbances,
+      disturbances: structuredClone(def.disturbances) as Disturbance[],
     });
     sim.runBaseline(60);
     const runner = new ScenarioRunner(def, sim);
@@ -68,6 +72,50 @@ export class ScenarioRunner {
   settle(maxSeconds = 60): void {
     this.sim.settle(maxSeconds);
     this.steps += maxSeconds;
+  }
+
+  /**
+   * Prediction pass-through onto the live execution world, on an isolated
+   * branch — never mutates the sandbox and never leaks ground truth. The
+   * agent orchestrator and the simulation tool use this to anticipate the
+   * effect of a candidate action.
+   */
+  predict(
+    action: Parameters<WorldSimulator["predict"]>[0],
+    overrides?: Parameters<WorldSimulator["predict"]>[1]
+  ): ReturnType<WorldSimulator["predict"]> {
+    return this.sim.predict(action, overrides);
+  }
+
+  /**
+   * Execute an approved remediation on the LIVE execution world, inside the
+   * runner so the blind surface is preserved. Mirrors `branchToPredict` but
+   * commits the action to the real base tuning (and, unless disabled, also
+   * neutralises the matching disturbances) so subsequent `step()` reflects it.
+   *
+   * Returns whether the action's preconditions passed and the resulting health.
+   */
+  executeChange(
+    actionType: ActionType,
+    parameters: Record<string, number | string> = {},
+    opts: { neutralizeDisturbances?: boolean } = {}
+  ): { ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" } {
+    const action = createAction(actionType, parameters);
+    const current = computeTuningAt(this.sim.baseTuning, this.sim.disturbances, this.sim.clock.now);
+    const applied = applyAction(current, action);
+    if (!applied.ok) {
+      return { ok: false, unmet: applied.unmet, health: this.health() };
+    }
+    // Commit the new tuning as the live base (in-place to respect `readonly`).
+    const base = this.sim.baseTuning;
+    base.trafficLevel = applied.tuning.trafficLevel;
+    base.capacityMultiplier = applied.tuning.capacityMultiplier;
+    base.latencyModifier = applied.tuning.latencyModifier;
+
+    if (opts.neutralizeDisturbances !== false) {
+      this.neutralizeRelated(actionType);
+    }
+    return { ok: true, unmet: [], health: this.health() };
   }
 
   /** Health classified purely from observable KPIs. */
@@ -162,6 +210,37 @@ export class ScenarioRunner {
       data.cause !== undefined ||
       data.scenario !== undefined
     );
+  }
+
+  /**
+   * Remove the disturbances that an action is meant to remediate (true
+   * recovery mode). Because every seeded disturbance persists forever
+   * (duration 0), a remediation that only changes tuning keeps re-degrading
+   * unless the matching disturbance is dropped.
+   */
+  private neutralizeRelated(actionType: ActionType): void {
+    const toRemove: string[] = disturbanceKindsFor(actionType);
+    const remaining = this.sim.disturbances.filter((d) => !toRemove.includes(d.type));
+    // splice in place on the live array (the reference is readonly, contents are not).
+    this.sim.disturbances.length = 0;
+    this.sim.disturbances.push(...remaining);
+  }
+}
+
+function disturbanceKindsFor(actionType: ActionType): string[] {
+  switch (actionType) {
+    case "increase_cache_capacity":
+    case "restart_cache":
+      return ["cache_degradation"];
+    case "scale_database":
+      return ["database_contention", "configuration_regression"];
+    case "change_configuration":
+    case "restore_configuration":
+      return ["configuration_regression", "database_contention"];
+    case "rollback_deployment":
+      return ["deployment_memory"];
+    default:
+      return [];
   }
 }
 
