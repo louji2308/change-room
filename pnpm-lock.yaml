@@ -116,6 +116,64 @@ importers:
         specifier: ^1.0.0-pre.53
         version: 1.0.0-pre.53
 
+  apps/change-room:
+    dependencies:
+      '@change-room/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@change-room/control':
+        specifier: workspace:*
+        version: link:../../packages/control
+      '@change-room/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@change-room/flight-recorder':
+        specifier: workspace:*
+        version: link:../../packages/flight-recorder
+      '@change-room/scenarios':
+        specifier: workspace:*
+        version: link:../../packages/scenarios
+      '@change-room/simulator':
+        specifier: workspace:*
+        version: link:../../packages/simulator
+      '@change-room/verification':
+        specifier: workspace:*
+        version: link:../../packages/verification
+      '@change-room/webmcp':
+        specifier: workspace:*
+        version: link:../../packages/webmcp
+      next:
+        specifier: 15.5.21
+        version: 15.5.21(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(react-dom@19.0.5(react@19.0.5))(react@19.0.5)
+      react:
+        specifier: 19.0.5
+        version: 19.0.5
+      react-dom:
+        specifier: 19.0.5
+        version: 19.0.5(react@19.0.5)
+    devDependencies:
+      '@types/node':
+        specifier: 17.0.21
+        version: 17.0.21
+      '@types/react':
+        specifier: 19.0.5
+        version: 19.0.5
+      '@types/react-dom':
+        specifier: 19.0.5
+        version: 19.0.5(@types/react@19.0.5)
+      autoprefixer:
+        specifier: ^10.4.2
+        version: 10.5.4(postcss@8.5.26)
+      postcss:
+        specifier: ^8.4.8
+        version: 8.5.26
+      tailwindcss:
+        specifier: ^3.0.23
+        version: 3.4.19(yaml@2.9.0)
+      typescript:
+        specifier: ^5.3.2
+        version: 5.9.3
+
   apps/storefront:
     dependencies:
       '@headlessui/react':
@@ -222,6 +280,67 @@ importers:
         specifier: ^5.3.2
         version: 5.9.3
 
+  packages/agent:
+    dependencies:
+      '@change-room/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@change-room/scenarios':
+        specifier: workspace:*
+        version: link:../scenarios
+      '@change-room/simulator':
+        specifier: workspace:*
+        version: link:../simulator
+    devDependencies:
+      '@types/node':
+        specifier: ^17.0.21
+        version: 17.0.21
+      typescript:
+        specifier: ^5.1.0
+        version: 5.9.3
+
+  packages/control:
+    dependencies:
+      '@change-room/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@change-room/simulator':
+        specifier: workspace:*
+        version: link:../simulator
+    devDependencies:
+      '@types/node':
+        specifier: ^17.0.21
+        version: 17.0.21
+      typescript:
+        specifier: ^5.1.0
+        version: 5.9.3
+
+  packages/domain:
+    dependencies:
+      '@change-room/simulator':
+        specifier: workspace:*
+        version: link:../simulator
+    devDependencies:
+      '@types/node':
+        specifier: ^17.0.21
+        version: 17.0.21
+      typescript:
+        specifier: ^5.1.0
+        version: 5.9.3
+
+  packages/flight-recorder:
+    dependencies:
+      '@change-room/domain':
+        specifier: workspace:*
+        version: link:../domain
+    devDependencies:
+      '@types/node':
+        specifier: ^17.0.21
+        version: 17.0.21
+      typescript:
+        specifier: ^5.1.0
+        version: 5.9.3
+
   packages/scenarios:
     dependencies:
       '@change-room/simulator':
@@ -249,6 +368,35 @@ importers:
         version: 5.9.3
 
   packages/state:
+    devDependencies:
+      '@types/node':
+        specifier: ^17.0.21
+        version: 17.0.21
+      typescript:
+        specifier: ^5.1.0
+        version: 5.9.3
+
+  packages/verification:
+    dependencies:
+      '@change-room/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@change-room/simulator':
+        specifier: workspace:*
+        version: link:../simulator
+    devDependencies:
+      '@types/node':
+        specifier: ^17.0.21
+        version: 17.0.21
+      typescript:
+        specifier: ^5.1.0
+        version: 5.9.3
+
+  packages/webmcp:
+    dependencies:
+      '@change-room/domain':
+        specifier: workspace:*
+        version: link:../domain
     devDependencies:
       '@types/node':
         specifier: ^17.0.21
@@ -8766,14 +8914,14 @@ snapshots:
   '@graphql-tools/optimize@2.0.0(graphql@16.14.2)':
     dependencies:
       graphql: 16.14.2
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   '@graphql-tools/relay-operation-optimizer@7.1.9(graphql@16.14.2)':
     dependencies:
       '@ardatan/relay-compiler': 13.0.2(graphql@16.14.2)
       '@graphql-tools/utils': 12.0.0(graphql@16.14.2)
       graphql: 16.14.2
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   '@graphql-tools/schema@10.1.0(graphql@16.14.2)':
     dependencies:
@@ -8788,7 +8936,7 @@ snapshots:
       '@whatwg-node/promise-helpers': 1.3.2
       cross-inspect: 1.0.1
       graphql: 16.14.2
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   '@graphql-tools/utils@12.0.0(graphql@16.14.2)':
     dependencies:
@@ -12966,7 +13114,7 @@ snapshots:
   capital-case@1.0.4:
     dependencies:
       no-case: 3.0.4
-      tslib: 2.6.3
+      tslib: 2.8.1
       upper-case-first: 2.0.2
 
   chalk@4.1.2:
@@ -13000,7 +13148,7 @@ snapshots:
       path-case: 3.0.4
       sentence-case: 3.0.4
       snake-case: 3.0.4
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   char-regex@1.0.2: {}
 
@@ -13168,7 +13316,7 @@ snapshots:
   constant-case@3.0.4:
     dependencies:
       no-case: 3.0.4
-      tslib: 2.6.3
+      tslib: 2.8.1
       upper-case: 2.0.2
 
   content-disposition@0.5.4:
@@ -13354,7 +13502,7 @@ snapshots:
   dot-case@3.0.4:
     dependencies:
       no-case: 3.0.4
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   dot-prop@5.3.0:
     dependencies:
@@ -14139,7 +14287,7 @@ snapshots:
   graphql-tag@2.12.7(graphql@16.14.2):
     dependencies:
       graphql: 16.14.2
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   graphql@16.14.2: {}
 
@@ -14168,7 +14316,7 @@ snapshots:
   header-case@2.0.4:
     dependencies:
       capital-case: 1.0.4
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   hosted-git-info@4.1.0:
     dependencies:
@@ -14414,7 +14562,7 @@ snapshots:
 
   is-lower-case@2.0.2:
     dependencies:
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   is-map@2.0.3: {}
 
@@ -14475,7 +14623,7 @@ snapshots:
 
   is-upper-case@2.0.2:
     dependencies:
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   is-valid-path@0.1.1:
     dependencies:
@@ -15128,7 +15276,7 @@ snapshots:
 
   lower-case-first@2.0.2:
     dependencies:
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   lower-case@2.0.2:
     dependencies:
@@ -15516,7 +15664,7 @@ snapshots:
   param-case@3.0.4:
     dependencies:
       dot-case: 3.0.4
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   parent-module@1.0.1:
     dependencies:
@@ -15547,7 +15695,7 @@ snapshots:
   path-case@3.0.4:
     dependencies:
       dot-case: 3.0.4
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   path-exists@4.0.0: {}
 
@@ -16241,7 +16389,7 @@ snapshots:
   sentence-case@3.0.4:
     dependencies:
       no-case: 3.0.4
-      tslib: 2.6.3
+      tslib: 2.8.1
       upper-case-first: 2.0.2
 
   serve-static@1.16.3:
@@ -16366,7 +16514,7 @@ snapshots:
   snake-case@3.0.4:
     dependencies:
       dot-case: 3.0.4
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   sonner@1.7.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
@@ -16393,7 +16541,7 @@ snapshots:
 
   sponge-case@1.0.1:
     dependencies:
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   sprintf-js@1.0.3: {}
 
@@ -16545,7 +16693,7 @@ snapshots:
 
   swap-case@2.0.2:
     dependencies:
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   tabbable@6.5.0: {}
 
@@ -16623,7 +16771,7 @@ snapshots:
 
   title-case@3.0.3:
     dependencies:
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   tmpl@1.0.5: {}
 
@@ -16821,11 +16969,11 @@ snapshots:
 
   upper-case-first@2.0.2:
     dependencies:
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   upper-case@2.0.2:
     dependencies:
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   uri-js@4.4.1:
     dependencies:
