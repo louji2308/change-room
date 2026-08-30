@@ -13,7 +13,7 @@
 import { ScenarioRunner } from "@change-room/scenarios";
 import type { ActionType, BusinessKpis, PredictionResult } from "@change-room/simulator";
 import { metricsOf } from "@change-room/verification";
-import { AgentOrchestrator } from "@change-room/agent";
+import { AgentOrchestrator, challengePlan } from "@change-room/agent";
 import type { IntentContract, Hypothesis, Plan, ToolName, WorkflowState } from "@change-room/domain";
 import {
   evaluateGate,
@@ -507,6 +507,26 @@ export class ChangeRoomSession {
         return { ok: true, data: this.orchestrator?.last.investigation ?? null };
       case "inspect_history":
         return { ok: true, data: this.flight.replay() };
+      case "challenge_plan": {
+        if (this.workflow !== "PLAN_READY" && this.workflow !== "SIMULATED") {
+          return { ok: false, error: `challenge_plan requires PLAN_READY or SIMULATED, got ${this.workflow}` };
+        }
+        const planId = String(args.planId ?? "");
+        const last = this.orchestrator!.last;
+        const res = challengePlan(
+          {
+            plans: last.plans,
+            evidence: last.investigation?.evidence ?? [],
+            hypotheses: last.hypotheses,
+            topHypothesis: last.topHypothesis,
+            simulations: last.simulations,
+            current: runner.agentView().kpis,
+          },
+          planId
+        );
+        if (!res.ok) return { ok: false, error: res.error };
+        return { ok: true, data: res.report };
+      }
       default:
         return { ok: false, error: `tool '${name}' not implemented in this runtime` };
     }

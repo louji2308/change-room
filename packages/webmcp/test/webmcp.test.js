@@ -112,6 +112,37 @@ test("read-only tool delegates to runtime and returns data", async () => {
   assert.equal(calls.length, 1);
 });
 
+// --- challenge_plan (Phase 13) ---
+test("challenge_plan is read-only and only available in planning states", () => {
+  assert.equal(getTool("challenge_plan").readOnly, true);
+  assert.equal(toolAvailableInState("challenge_plan", "PLAN_READY"), true);
+  assert.equal(toolAvailableInState("challenge_plan", "SIMULATED"), true);
+  assert.equal(toolAvailableInState("challenge_plan", "APPROVED"), false);
+});
+
+test("challenge_plan propagates a controlled runtime error in WebMCP result shape", async () => {
+  const runtime = {
+    workflowState: () => "PLAN_READY",
+    execute: async (name, args) => {
+      assert.equal(name, "challenge_plan");
+      assert.deepEqual(args, { planId: "nope" });
+      return { ok: false, error: "unknown plan 'nope'" };
+    },
+  };
+  const reg = new WebmcpRegistry(runtime);
+  const res = await reg.invoke("challenge_plan", { planId: "nope" });
+  assert.equal(res.ok, false);
+  assert.equal(res.error, "unknown plan 'nope'");
+});
+
+test("challenge_plan requires its planId input", async () => {
+  const { runtime } = makeRuntime("PLAN_READY");
+  const reg = new WebmcpRegistry(runtime);
+  const res = await reg.invoke("challenge_plan", {});
+  assert.equal(res.ok, false);
+  assert.ok(res.validation.includes("missing required field 'planId'"));
+});
+
 // --- WebMCP adapter (feature detection) ---
 test("adapter is a safe no-op when WebMCP host is unavailable", () => {
   // In Node there is no document.modelContext, so registration returns [].

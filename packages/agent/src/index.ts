@@ -12,5 +12,16 @@ export { investigate, type InvestigationResult } from "./investigation.js";
 export { formHypotheses } from "./hypotheses.js";
 export { candidatesFor, buildPlans, type PlanCandidate } from "./planning.js";
 export { simulatePlan, type SimulatedPlan } from "./simulation.js";
+export {
+  challengePlan,
+  type ChallengeContext,
+  type ChallengeReport,
+  type ChallengeResult,
+  type SupportingEvidenceRef,
+  type CounterEvidence,
+  type WeakAssumption,
+  type FailureMode,
+  type AlternativePlan,
+} from "./challenge.js";
 export { decideRecovery, type RecoveryDecision, type RecoveryInput } from "./recovery.js";
 export { AgentOrchestrator, type AgentContext, type AgentReasoningResult } from "./orchestrator.js";
