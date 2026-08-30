@@ -19,6 +19,10 @@ export type View = {
   verification: any;
   flight: any;
   blind: boolean;
+  stateVersion: number;
+  delegation: any;
+  paused: boolean;
+  humanMutations: any[];
 };
 
 export type SessionResponse = {

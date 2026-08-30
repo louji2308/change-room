@@ -19,6 +19,8 @@ export interface DelegationGrant {
   scope: string[];
   /** Whether human approval is still required even under delegation. */
   approvalStillRequired: boolean;
+  /** If true, only reversible operations are covered by this delegation. */
+  reversibleOnly?: boolean;
 }
 
 export interface AuthorityInput {
@@ -57,6 +59,9 @@ export function decideAuthority(input: AuthorityInput): AuthorityVerdict {
     }
     if (input.delegation.scope.length > 0 && !input.affected.some((a) => input.delegation!.scope.includes(a))) {
       return { allowed: false, reason: "affected resources are outside delegation scope" };
+    }
+    if (input.delegation.reversibleOnly && !input.reversible) {
+      return { allowed: false, reason: "delegation only covers reversible operations" };
     }
     return {
       allowed: true,

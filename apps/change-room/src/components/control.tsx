@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import type { View } from "@/lib/api";
+import { api } from "@/lib/api";
 
 /** Phase 4.8 + 5 — Approval & Change Control result (gate decision). */
 export function ApprovalPanel({ view }: { view: View }) {
@@ -132,6 +134,124 @@ export function TimelinePanel({ view }: { view: View }) {
               </span>
             </div>
           ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Phase 12 — Bounded delegation + human takeover controls. */
+export function DelegationPanel({ view }: { view: View }) {
+  const [ceiling, setCeiling] = useState<string>("medium");
+  const [durationMs, setDurationMs] = useState<string>("600000");
+  const [reversibleOnly, setReversibleOnly] = useState<boolean>(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const run = async (action: string, body?: Record<string, unknown>) => {
+    setBusy(action);
+    setMsg(null);
+    const res = await api(action, body);
+    if (res.ok) setMsg(`${action} ok`);
+    else setMsg(res.error ?? `${action} failed`);
+    window.location.reload();
+    setBusy(null);
+  };
+
+  const d: any = view.delegation;
+  return (
+    <section className="panel" aria-label="Delegation and human takeover">
+      <h3>Delegation &amp; Takeover</h3>
+
+      <div className="chips" style={{ marginBottom: "0.75rem" }}>
+        <span className="badge">
+          <span className={`dot ${view.paused ? "dot-warn" : "dot-ok"}`} />
+          {view.paused ? "AGENT PAUSED" : "agent active"}
+        </span>
+        <span className="badge">state v{view.stateVersion}</span>
+        <span className="badge">{d ? `delegated: ${d.riskCeiling} / ${d.scope?.length ?? 0} resources` : "no delegation"}</span>
+      </div>
+
+      {d && (
+        <dl className="kv">
+          <dt>Risk ceiling</dt>
+          <dd>{d.riskCeiling}</dd>
+          <dt>Scope</dt>
+          <dd className="mono">{d.scope?.join(", ") ?? "—"}</dd>
+          <dt>Reversible only</dt>
+          <dd>{d.reversibleOnly ? "yes" : "no"}</dd>
+          <dt>Approval still required</dt>
+          <dd>{d.approvalStillRequired ? "yes" : "no"}</dd>
+          <dt>Expires</dt>
+          <dd className="mono">{new Date(d.expiresAt).toLocaleTimeString()}</dd>
+        </dl>
+      )}
+
+      <div className="stack" style={{ marginTop: "0.75rem" }}>
+        <div className="row" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
+          <label className="row" style={{ gap: "0.35rem" }}>
+            ceiling
+            <select className="button" value={ceiling} onChange={(e) => setCeiling(e.target.value)} aria-label="Risk ceiling">
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
+          </label>
+          <label className="row" style={{ gap: "0.35rem" }}>
+            duration (ms)
+            <input
+              className="button"
+              style={{ width: 96 }}
+              type="number"
+              value={durationMs}
+              onChange={(e) => setDurationMs(e.target.value)}
+              aria-label="Delegation duration milliseconds"
+            />
+          </label>
+          <label className="row" style={{ gap: "0.35rem" }}>
+            <input type="checkbox" checked={reversibleOnly} onChange={(e) => setReversibleOnly(e.target.checked)} />
+            reversible only
+          </label>
+        </div>
+        <div className="row" style={{ gap: "0.5rem" }}>
+          <button
+            className="button"
+            disabled={busy !== null}
+            onClick={() => run("delegate", { riskCeiling: ceiling, durationMs: Number(durationMs), reversibleOnly })}
+          >
+            Grant delegation
+          </button>
+          <button className="button button-danger" disabled={busy !== null || !d} onClick={() => run("revoke_delegation")}>
+            Revoke
+          </button>
+          {view.paused ? (
+            <button className="button button-primary" disabled={busy !== null} onClick={() => run("resume")}>
+              Resume agent
+            </button>
+          ) : (
+            <button className="button" disabled={busy !== null} onClick={() => run("pause")}>
+              Pause agent
+            </button>
+          )}
+        </div>
+        <div className="row" style={{ gap: "0.5rem", marginTop: "0.25rem" }}>
+          <button className="button button-danger" disabled={busy !== null} onClick={() => run("takeover", { actionType: "restore_configuration", note: "human applied restore_configuration manually" })}>
+            Human takeover (restore config)
+          </button>
+          <button className="button button-danger" disabled={busy !== null} onClick={() => run("takeover", { actionType: "scale_database", note: "human scaled database manually" })}>
+            Human takeover (scale DB)
+          </button>
+        </div>
+      </div>
+
+      {msg && (
+        <div role="status" className="text-info mono" style={{ marginTop: "0.5rem", fontSize: 12 }}>
+          {msg}
+        </div>
+      )}
+      {view.humanMutations?.length > 0 && (
+        <div className="text-warn mono" style={{ marginTop: "0.5rem", fontSize: 12 }}>
+          {view.humanMutations.length} human mutation(s) recorded — current plans may be stale.
         </div>
       )}
     </section>

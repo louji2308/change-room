@@ -71,6 +71,36 @@ export async function POST(req: NextRequest) {
         const res = session.requestHumanDecision(typeof body.ask === "string" ? body.ask : "agent requests a decision");
         return NextResponse.json({ ok: true, request: res, view: session.view() });
       }
+      // Phase 12 — bounded delegation + human takeover
+      case "delegate": {
+        const grant = session.grantDelegation({
+          riskCeiling: (body.riskCeiling as "low" | "medium" | "high") ?? "medium",
+          durationMs: Number(body.durationMs ?? 600000),
+          scope: Array.isArray(body.scope) ? (body.scope as string[]) : ["cache", "database", "configuration", "checkout", "api-gateway", "queue"],
+          approvalStillRequired: body.approvalStillRequired !== false,
+          reversibleOnly: body.reversibleOnly !== false,
+        });
+        return NextResponse.json({ ok: true, delegation: grant, view: session.view() });
+      }
+      case "revoke_delegation": {
+        session.revokeDelegation();
+        return NextResponse.json({ ok: true, view: session.view() });
+      }
+      case "pause":
+        session.pauseAgent();
+        return NextResponse.json({ ok: true, view: session.view() });
+      case "resume": {
+        const res = session.resumeAgent();
+        return NextResponse.json({ ok: true, result: res, view: session.view() });
+      }
+      case "takeover": {
+        const res = session.humanTakeover(
+          (body.actionType as import("@change-room/simulator").ActionType) ?? "restore_configuration",
+          (body.params as Record<string, number | string>) ?? {},
+          typeof body.note === "string" ? body.note : "human modified the system manually"
+        );
+        return NextResponse.json({ ok: true, takeover: res, view: session.view() });
+      }
       default:
         return NextResponse.json({ ok: false, error: `unknown action: ${action}` }, { status: 400 });
     }

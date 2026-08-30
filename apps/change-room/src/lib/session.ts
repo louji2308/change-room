@@ -18,8 +18,11 @@ import type { IntentContract, Hypothesis, Plan, ToolName, WorkflowState } from "
 import {
   evaluateGate,
   PolicyEngine,
+  type DelegationGrant,
   type GateDecision,
   type PermissionContext,
+  type StateMutation,
+  type ActorType,
 } from "@change-room/control";
 import { FlightRecorder } from "@change-room/flight-recorder";
 import { PredictionVsReality } from "@change-room/verification";
@@ -69,6 +72,14 @@ export interface PublicView {
   verification: ReturnType<PredictionVsReality["summary"]>;
   flight: ReturnType<FlightRecorder["summary"]> & { steps: ReturnType<FlightRecorder["replay"]>["steps"] };
   blind: boolean;
+  /** Current live state version (advances on human takeover / execution). */
+  stateVersion: number;
+  /** Bounded delegation currently in force, if any. */
+  delegation: DelegationGrant | null;
+  /** Whether the agent is currently paused. */
+  paused: boolean;
+  /** Human-committed mutations since the current plan, for conflict detection. */
+  humanMutations: StateMutation[];
 }
 
 export class ChangeRoomSession {
@@ -83,6 +94,14 @@ export class ChangeRoomSession {
   private selectedPlanId: string | null = null;
   private lastGate: GateDecision | null = null;
   private requestCounter = 0;
+  /** Live state version; advances whenever the world meaningfully changes. */
+  private currentVersion = 0;
+  /** Bounded delegation currently in force (Phase 12). */
+  private delegation: DelegationGrant | null = null;
+  /** Whether the agent is paused (Phase 12.2). */
+  private paused = false;
+  /** Mutations committed by the human since the current plan (conflict detection). */
+  private humanMutations: StateMutation[] = [];
 
   /** Scenario the sandbox is running (named scenario id), for admin/debug only. */
   private scenarioName: string | null = null;
@@ -97,6 +116,10 @@ export class ChangeRoomSession {
     this.flight = new FlightRecorder();
     this.verification = new PredictionVsReality();
     this.scenarioName = null;
+    this.currentVersion = 0;
+    this.delegation = null;
+    this.paused = false;
+    this.humanMutations = [];
   }
 
   /** Start a scenario (by its stable scenario-database id) and run to baseline. */
@@ -106,7 +129,11 @@ export class ChangeRoomSession {
     // advance into the incident a little so the agent sees degraded/impact
     runner.settle(20);
     this.runner = runner;
-    this.orchestrator = new AgentOrchestrator({ sim: { predict: (a, o) => runner.predict(a, o) }, currentStateVersion: () => runner.session().startedAt });
+    this.currentVersion = runner.session().startedAt;
+    this.delegation = null;
+    this.paused = false;
+    this.humanMutations = [];
+    this.orchestrator = new AgentOrchestrator({ sim: { predict: (a, o) => runner.predict(a, o) }, currentStateVersion: () => this.currentVersion });
     this.scenarioName = scenarioId;
     this.workflow = "CONTRACT_SET";
     this.phase = { name: "incident", scenarioId };
@@ -125,6 +152,7 @@ export class ChangeRoomSession {
    */
   reason(goal: string): ReturnType<AgentOrchestrator["reason"]> {
     const runner = this.requireRunner();
+    if (this.paused) throw Object.assign(new Error("agent is paused; cannot reason"), { code: "PAUSED" });
     const view = runner.agentView();
     const result = this.orchestrator!.reason(goal, view);
     this.workflow = result.plans.length > 0 ? "PLAN_READY" : "INVESTIGATING";
@@ -149,19 +177,21 @@ export class ChangeRoomSession {
    */
   prepareChange(): GateDecision {
     const runner = this.requireRunner();
+    if (this.paused) throw Object.assign(new Error("agent is paused; cannot advance the workflow"), { code: "PAUSED" });
     if (!this.selectedPlanId) {
       const top = this.orchestrator!.last.plans[0];
       if (top) this.selectedPlanId = top.id;
     }
     const plan = this.selectedPlan();
-    const currentVersion = runner.session().startedAt;
+    const currentVersion = this.currentVersion;
     const gate = evaluateGate(
       {
         plan,
         currentStateVersion: currentVersion,
         permission: this.permission,
-        delegation: null,
+        delegation: this.delegation,
         now: Date.now(),
+        mutationsSince: this.humanMutations,
       },
       this.policy
     );
@@ -213,6 +243,9 @@ export class ChangeRoomSession {
     const plan = this.selectedPlan();
     const gate = this.lastGate;
 
+    if (this.paused) {
+      throw Object.assign(new Error("agent is paused; cannot execute"), { code: "PAUSED" });
+    }
     if (this.workflow !== "APPROVED") {
       throw Object.assign(new Error(`executeChange requires APPROVED, got ${this.workflow}`), { code: "WRONG_STATE" });
     }
@@ -234,11 +267,14 @@ export class ChangeRoomSession {
     const kpis = runner.agentView().kpis;
     this.verification.recordActual({
       planId: plan.id,
-      stateVersion: runner.session().startedAt,
+      stateVersion: this.currentVersion,
       actual: metricsOf(kpis),
       actualHealth: kpis.systemHealth,
       timestamp: Date.now(),
     });
+
+    // A committed change moves the world to a new state version.
+    this.currentVersion += 1;
 
     this.workflow = "EXECUTED";
     this.phase = { name: "executed" };
@@ -285,6 +321,126 @@ export class ChangeRoomSession {
     return { requestId: id };
   }
 
+  // ---------------------------------------------------------------------------
+  // Phase 12 — Bounded delegation + human takeover
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Grant a bounded, expiring delegation to the agent (Implementation.md §12.1).
+   * `durationMs` bounds how long authority lasts; scope, riskCeiling and
+   * reversibleOnly bound what it covers. The authority engine enforces all of
+   * these at the gate.
+   */
+  grantDelegation(g: {
+    riskCeiling: "low" | "medium" | "high";
+    durationMs: number;
+    scope: string[];
+    approvalStillRequired?: boolean;
+    reversibleOnly?: boolean;
+  }): DelegationGrant {
+    if (this.workflow === "IDLE") throw new Error("start a scenario before granting delegation");
+    if (g.durationMs <= 0) throw new Error("delegation duration must be positive");
+    const delegation: DelegationGrant = {
+      riskCeiling: g.riskCeiling,
+      expiresAt: Date.now() + g.durationMs,
+      scope: g.scope,
+      approvalStillRequired: g.approvalStillRequired ?? true,
+      reversibleOnly: g.reversibleOnly ?? false,
+    };
+    this.delegation = delegation;
+    this.flight.record({
+      actor: "human",
+      type: "delegation_granted",
+      resultSummary:
+        `delegated authority: ceiling=${delegation.riskCeiling}, scope=[${delegation.scope.join(",")}], ` +
+        `durationMs=${g.durationMs}, expiresAt=${delegation.expiresAt}`,
+      detail: { ...delegation },
+    });
+    return delegation;
+  }
+
+  /** Revoke the current delegation (expires it immediately). */
+  revokeDelegation(): void {
+    if (!this.delegation) throw new Error("no delegation to revoke");
+    const prev = this.delegation;
+    this.delegation = null;
+    this.flight.record({ actor: "human", type: "delegation_revoked", resultSummary: "delegation revoked", detail: { ...prev } });
+  }
+
+  /** Whether the current delegation has expired. */
+  delegationExpired(): boolean {
+    return this.delegation !== null && this.delegation.expiresAt <= Date.now();
+  }
+
+  /** Pause the agent immediately (Implementation.md §12.2). */
+  pauseAgent(): void {
+    this.paused = true;
+    this.flight.record({ actor: "human", type: "agent_paused", resultSummary: `agent paused at workflow=${this.workflow}` });
+  }
+
+  /** Resume the agent from the *current* state (Implementation.md §12.4). */
+  resumeAgent(): { replanned: boolean; reason: string } {
+    if (!this.paused) throw new Error("agent is not paused");
+    this.paused = false;
+    const hadStale = this.orchestrator
+      ? this.orchestrator.last.plans.some((p) => p.stateVersion !== this.currentVersion)
+      : false;
+    // Resume from the new current state: re-reason over the live view so the
+    // agent does not continue from stale assumptions.
+    let replanned = false;
+    if (this.runner) {
+      const runner = this.requireRunner();
+      const fresh = this.orchestrator!.reason(
+        this.orchestrator!.last.contract?.goal ?? "restore system health",
+        runner.agentView()
+      );
+      this.workflow = fresh.plans.length > 0 ? "PLAN_READY" : "INVESTIGATING";
+      this.selectedPlanId = null;
+      this.lastGate = null;
+      this.humanMutations = [];
+      this.flight.record({
+        actor: "system",
+        type: "agent_resumed",
+        resultSummary: `agent resumed and replanned from state version ${this.currentVersion}; ${fresh.plans.length} plans`,
+        detail: { hadStale, newStateVersion: this.currentVersion },
+      });
+      replanned = true;
+    }
+    return { replanned, reason: hadStale ? "previous plan was stale; agent replanned" : "agent resumed from current state" };
+  }
+
+  /**
+   * Human takeover (Implementation.md §12.3): the human manually mutates the
+   * live system through a controlled action. This advances the state version,
+   * which invalidates any plan the agent created earlier (stale-plan detection)
+   * and is recorded for conflict detection.
+   */
+  humanTakeover(actionType: ActionType, params: Record<string, number | string> = {}, note = "human modified the system manually"): { ok: boolean; stateVersion: number; health: string; error?: string } {
+    const runner = this.requireRunner();
+    const wasPaused = this.paused;
+    this.paused = true;
+    const res = runner.executeChange(actionType, params, { neutralizeDisturbances: false });
+    runner.settle(10);
+    const newVersion = ++this.currentVersion;
+    const now = Date.now();
+    const affected = resourcesForAction(actionType);
+    for (const resource of affected) {
+      this.humanMutations.push({ resource, actor: "human" as ActorType, version: newVersion, timestamp: now });
+    }
+    // Human takeover takes control away from the current agent plan.
+    this.selectedPlanId = null;
+    this.lastGate = null;
+    this.delegation = null;
+    if (!wasPaused) this.paused = false; // takeover is a momentary pause while mutating
+    this.flight.record({
+      actor: "human",
+      type: "human_takeover",
+      resultSummary: `human ${actionType}: ${res.ok ? "applied" : res.unmet.join(", ")}; state version ${newVersion}`,
+      detail: { note, actionType, stateVersion: newVersion, affected },
+    });
+    return { ok: res.ok, stateVersion: newVersion, health: runner.health(), error: res.ok ? undefined : res.unmet.join(", ") };
+  }
+
   /** Public, blind-safe view for the UI and tool runtime. */
   view(): PublicView {
     const runner = this.runner;
@@ -309,6 +465,10 @@ export class ChangeRoomSession {
       verification: this.verification.summary(),
       flight: { ...this.flight.summary(), steps: this.flight.replay().steps },
       blind: view ? view.blind : true,
+      stateVersion: this.currentVersion,
+      delegation: this.delegation,
+      paused: this.paused,
+      humanMutations: this.humanMutations,
     };
   }
 
@@ -370,6 +530,21 @@ function humanLabel(s: WorkflowState): string {
     COMPLETE: "Complete",
   };
   return m[s];
+}
+
+/** Map an action type to the resource(s) it primarily touches (for conflict tracking). */
+function resourcesForAction(type: string): string[] {
+  const map: Record<string, string[]> = {
+    increase_cache_capacity: ["cache"],
+    restart_cache: ["cache"],
+    scale_service: ["checkout"],
+    scale_database: ["database", "queue"],
+    rollback_deployment: ["api-gateway", "checkout"],
+    change_configuration: ["configuration", "database"],
+    restore_configuration: ["database", "cache", "api-gateway"],
+    do_nothing: [],
+  };
+  return map[type] ?? [type];
 }
 
 let _session: ChangeRoomSession | null = null;

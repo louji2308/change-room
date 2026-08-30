@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, getState, type SessionResponse, type View } from "@/lib/api";
 import { SystemPanel, IncidentPanel, EvidencePanel, HypothesesPanel, PlansPanel, SimulationPanel } from "@/components/panels";
-import { ApprovalPanel, VerificationPanel, TimelinePanel } from "@/components/control";
+import { ApprovalPanel, VerificationPanel, TimelinePanel, DelegationPanel } from "@/components/control";
 
 const ACTIONS: Array<{ id: string; label: string; needs?: string[]; danger?: boolean; body?: (v: View) => Record<string, unknown> }> = [
   { id: "start", label: "Start scenario", needs: ["IDLE", "COMPLETE", "RECOVERING"] },
@@ -129,7 +129,8 @@ export default function ControlRoom() {
         <div className="row" style={{ gap: "0.75rem" }}>
           <h1>Change Room</h1>
           <span className="badge">
-            <span className={`dot ${view.workflow === "COMPLETE" ? "dot-ok" : "dot-info"}`} />
+            <span className={`dot ${view.paused ? "dot-warn" : view.workflow === "COMPLETE" ? "dot-ok" : "dot-info"}`} />
+            {view.paused ? "PAUSED — " : ""}
             {view.statusLabel} ({view.workflow})
           </span>
         </div>
@@ -188,6 +189,7 @@ export default function ControlRoom() {
           <ApprovalPanel view={view} />
           <VerificationPanel view={view} />
         </div>
+        <DelegationPanel view={view} />
         <TimelinePanel view={view} />
       </div>
     </div>

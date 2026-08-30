@@ -104,6 +104,19 @@ test("authority: delegation beyond scope refuses", () => {
   assert.equal(v.allowed, false);
 });
 
+// --- Phase 12: bounded delegation (reversibility requirement) ---
+test("authority: delegation reversible-only refuses an irreversible operation", () => {
+  const grant = { riskCeiling: "low", expiresAt: NOW + 1000, scope: ["cache"], approvalStillRequired: false, reversibleOnly: true };
+  const v = decideAuthority({ agentLevel: "L4", risk: { overall: "low" }, reversible: false, affected: ["cache"], delegation: grant, now: NOW, policyApprovalRequired: false });
+  assert.equal(v.allowed, false);
+});
+
+test("authority: delegation reversible-only allows a reversible operation", () => {
+  const grant = { riskCeiling: "low", expiresAt: NOW + 1000, scope: ["cache"], approvalStillRequired: false, reversibleOnly: true };
+  const v = decideAuthority({ agentLevel: "L4", risk: { overall: "low" }, reversible: true, affected: ["cache"], delegation: grant, now: NOW, policyApprovalRequired: false });
+  assert.equal(v.allowed, true);
+});
+
 // --- Stale plan ---
 test("stale plan is rejected when state version advances", () => {
   const fresh = validatePlanFreshness(10, 10);

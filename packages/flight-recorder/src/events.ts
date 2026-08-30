@@ -32,6 +32,7 @@ export type ChangeRoomEventType =
   | "human_takeover"
   | "delegation_granted"
   | "delegation_expired"
+  | "delegation_revoked"
   | "incident_complete";
 
 export interface ChangeRoomEvent {
