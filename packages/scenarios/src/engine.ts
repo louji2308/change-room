@@ -6,6 +6,7 @@ import {
   createAction,
   applyAction,
   computeTuningAt,
+  branchToPredict,
 } from "@change-room/simulator";
 import type { AgentView, GroundTruth, ScenarioSession } from "./types.js";
 import { getScenario } from "./registry.js";
@@ -24,11 +25,20 @@ import { getScenario } from "./registry.js";
  * values — consequences still emerge from the causal model.
  */
 
+interface UndoFrame {
+  trafficLevel: number;
+  capacityMultiplier: Record<string, number>;
+  latencyModifier: Record<string, number>;
+  disturbances: Disturbance[];
+}
+
 export class ScenarioRunner {
   private sim: WorldSimulator;
   private definition;
   private startedAt = 0;
   private steps = 0;
+  /** Deque of executed changes so `rollback()` can faithfully revert the last one. */
+  private undoStack: UndoFrame[] = [];
 
   private constructor(definition: NonNullable<ReturnType<typeof getScenario>>, sim: WorldSimulator) {
     this.definition = definition;
@@ -75,16 +85,42 @@ export class ScenarioRunner {
   }
 
   /**
-   * Prediction pass-through onto the live execution world, on an isolated
-   * branch — never mutates the sandbox and never leaks ground truth. The
-   * agent orchestrator and the simulation tool use this to anticipate the
-   * effect of a candidate action.
+   * Prediction that mirrors `executeChange`'s remediation semantics: the action
+   * is applied to the clean baseline and the matching disturbances are
+   * dropped, then the branch simulates forward. This makes the harness's
+   * prediction-accuracy metric compare like-with-like (a remediation was
+   * executed, so the prediction must also model a remediation), and it gives
+   * the agent's simulation tool an honest view of what its action would do.
    */
   predict(
     action: Parameters<WorldSimulator["predict"]>[0],
     overrides?: Parameters<WorldSimulator["predict"]>[1]
   ): ReturnType<WorldSimulator["predict"]> {
-    return this.sim.predict(action, overrides);
+    const applied = applyAction(this.sim.baseTuning, action);
+    if (!applied.ok) {
+      return {
+        ok: false,
+        unmet: applied.unmet,
+        finalTuning: computeTuningAt(this.sim.baseTuning, this.sim.disturbances, this.sim.clock.now),
+        metrics: [],
+        kpis: this.sim.observe().kpis,
+        logs: [],
+        events: [],
+        worldVersion: this.sim.world.version,
+        fingerprint: this.sim.world.fingerprint(),
+      };
+    }
+    const remaining = this.sim.disturbances.filter(
+      (d) => !disturbanceKindsFor(action.type).includes(d.type)
+    );
+    return branchToPredict({
+      world: this.sim.world,
+      baseTuning: applied.tuning,
+      disturbances: remaining,
+      action: createAction("do_nothing"),
+      actionTime: this.sim.clock.now,
+      ...overrides,
+    });
   }
 
   /**
@@ -92,6 +128,12 @@ export class ScenarioRunner {
    * runner so the blind surface is preserved. Mirrors `branchToPredict` but
    * commits the action to the real base tuning (and, unless disabled, also
    * neutralises the matching disturbances) so subsequent `step()` reflects it.
+   *
+   * The applied tuning replaces the live per-component capacity/latency maps
+   * whole (deletions such as `restore_configuration` persist). Traffic level is
+   * never rewritten: no action may change demand, only capacity. A snapshot of
+   * the pre-change state is pushed to the undo stack so `rollback()` can
+   * faithfully revert this change.
    *
    * Returns whether the action's preconditions passed and the resulting health.
    */
@@ -101,20 +143,47 @@ export class ScenarioRunner {
     opts: { neutralizeDisturbances?: boolean } = {}
   ): { ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" } {
     const action = createAction(actionType, parameters);
-    const current = computeTuningAt(this.sim.baseTuning, this.sim.disturbances, this.sim.clock.now);
-    const applied = applyAction(current, action);
+    // Remediation is applied to the *clean* baseline, not to the currently
+    // degraded tuning: an action adds capacity/latency relief on top of the
+    // healthy baseline, then the matching disturbances are removed. Applying to
+    // the degraded current would bake the degraded values into the new world
+    // base (a queue stuck at 40% capacity forever) and double-degrade the
+    // disturbances that legitimately remain.
+    const applied = applyAction(this.sim.baseTuning, action);
     if (!applied.ok) {
       return { ok: false, unmet: applied.unmet, health: this.health() };
     }
     // Commit the new tuning as the live base (in-place to respect `readonly`).
     const base = this.sim.baseTuning;
-    base.trafficLevel = applied.tuning.trafficLevel;
-    base.capacityMultiplier = applied.tuning.capacityMultiplier;
-    base.latencyModifier = applied.tuning.latencyModifier;
+    this.undoStack.push({
+      trafficLevel: base.trafficLevel,
+      capacityMultiplier: { ...base.capacityMultiplier },
+      latencyModifier: { ...base.latencyModifier },
+      disturbances: this.sim.disturbances.map((d) => structuredClone(d)),
+    });
+    base.capacityMultiplier = { ...applied.tuning.capacityMultiplier };
+    base.latencyModifier = { ...applied.tuning.latencyModifier };
 
     if (opts.neutralizeDisturbances !== false) {
       this.neutralizeRelated(actionType);
     }
+    return { ok: true, unmet: [], health: this.health() };
+  }
+
+  /**
+   * Faithfully revert the last executed change: restore the pre-change base
+   * tuning and the disturbance set, then report the current health. Returns
+   * `ok:false` (no mutation) when there is nothing to roll back.
+   */
+  rollback(): { ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" } {
+    const prev = this.undoStack.pop();
+    if (!prev) return { ok: false, unmet: ["no executed change to roll back"], health: this.health() };
+    const base = this.sim.baseTuning;
+    base.trafficLevel = prev.trafficLevel;
+    base.capacityMultiplier = prev.capacityMultiplier;
+    base.latencyModifier = prev.latencyModifier;
+    this.sim.disturbances.length = 0;
+    this.sim.disturbances.push(...prev.disturbances);
     return { ok: true, unmet: [], health: this.health() };
   }
 
@@ -126,6 +195,8 @@ export class ScenarioRunner {
   /**
    * The ONLY allowed agent-facing surface. Strips every hidden field: seed,
    * disturbances, scenario id, and any event that carries cause metadata.
+   * Deployment metadata from the definition *is* surfaced — it is observation,
+   * never a causal claim (16.3 correlation trap lives here).
    */
   agentView(): AgentView {
     const o = this.sim.observe();
@@ -138,6 +209,7 @@ export class ScenarioRunner {
       metrics: o.metrics.map(redactMetric),
       logs: safeLogs,
       health: o.kpis.systemHealth,
+      deployments: this.definition.deployments ?? [],
       blind: true,
     };
   }
@@ -151,10 +223,12 @@ export class ScenarioRunner {
       scenarioId: this.definition.id,
       name: this.definition.name,
       seed: this.definition.seed,
+      kind: this.definition.kind,
       disturbances: structuredClone(this.definition.disturbances) as Disturbance[],
       difficulty: this.definition.difficulty,
       expectedSymptoms: [...this.definition.expectedSymptoms],
       expectedRecovery: [...this.definition.expectedRecovery],
+      deployments: this.definition.deployments ? structuredClone(this.definition.deployments) : [],
     };
   }
 
@@ -198,6 +272,7 @@ export class ScenarioRunner {
   reset(): void {
     const traffic = this.sim.baseTuning.trafficLevel;
     this.sim = ScenarioRunner.cleanBaseline(traffic);
+    this.undoStack = [];
     this.steps = 0;
     this.startedAt = 0;
   }
@@ -234,7 +309,10 @@ function disturbanceKindsFor(actionType: ActionType): string[] {
       return ["cache_degradation"];
     case "scale_database":
       return ["database_contention", "configuration_regression"];
+    case "scale_service":
+      return ["traffic_spike"];
     case "change_configuration":
+      return ["queue_backlog", "configuration_regression", "database_contention"];
     case "restore_configuration":
       return ["configuration_regression", "database_contention"];
     case "rollback_deployment":
