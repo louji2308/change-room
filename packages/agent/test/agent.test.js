@@ -6,6 +6,7 @@ import { investigate } from "../dist/investigation.js";
 import { formHypotheses } from "../dist/hypotheses.js";
 import { candidatesFor, buildPlans } from "../dist/planning.js";
 import { decideRecovery } from "../dist/recovery.js";
+import { challengePlan } from "../dist/challenge.js";
 import { AgentOrchestrator } from "../dist/orchestrator.js";
 import { WorldSimulator } from "@change-room/simulator";
 import { ScenarioRunner } from "@change-room/scenarios";
@@ -151,4 +152,178 @@ test("agent reasons over a blind cache-failure scenario end to end", () => {
   // The ground truth must remain hidden from the agent's reasoning surface.
   const gt = runner.groundTruth(); // admin-only accessor for evaluation
   assert.equal(gt.scenarioId, "cache-failure");
+});
+
+// --- Agent Challenge Mode (Phase 13) ---
+function evidence(id, metric, label) {
+  return { id, label, metric, value: 25, source: "metrics", timestamp: 100, relevance: 0.9, trust: "trusted-system", uncertainty: 0.1 };
+}
+
+function cacheHypothesis(conf = 0.8) {
+  return {
+    id: "hyp_cache",
+    cause: "cache degradation",
+    confidence: conf,
+    supporting: ["cache hit rate dropped"],
+    counterevidence: ["database utilization high contradicted"],
+    missingEvidence: ["queue depth growing"],
+    status: "supported",
+    basis: ["cache hit rate dropped (cacheHitRateEstimate=25)"],
+  };
+}
+
+function configHypothesis(conf = 0.7) {
+  return {
+    id: "hyp_config",
+    cause: "configuration regression",
+    confidence: conf,
+    supporting: ["database engaged"],
+    counterevidence: [],
+    missingEvidence: [],
+    status: "supported",
+    basis: [],
+  };
+}
+
+function plan(id, name, assumptions, overrides = {}) {
+  return {
+    id,
+    name,
+    objective: "restore checkout",
+    actions: [{ type: "increase_cache_capacity", parameters: { newCapacityGB: 30 }, description: "Raise cache capacity" }],
+    stateVersion: 7,
+    expectedOutcome: "checkout returns toward baseline",
+    evidence: ["cache hit rate dropped"],
+    assumptions,
+    confidence: 0.8,
+    risk: { overall: "medium", factors: {}, reversible: true },
+    blastRadius: "low",
+    reversibility: "fully-reversible",
+    policy: { allowed: true, approvalRequired: false, reason: "" },
+    requiredAuthority: "L2",
+    cost: "medium",
+    status: "SIMULATED",
+    isDoNothing: false,
+    createdAt: 1,
+    ...overrides,
+  };
+}
+
+const DATA_ACCESS = {
+  evidence: [
+    evidence("ev_cache_hit", "cacheHitRateEstimate", "Cache hit rate estimate"),
+    evidence("ev_db_util", "database.utilization", "Database utilization high"),
+  ],
+  hypotheses: [cacheHypothesis(), configHypothesis()],
+  top: cacheHypothesis(),
+  plans: (assumptions = ["Cache pressure is the primary cause", "Infrastructure can host larger cache"]) => [
+    plan("plan_cache", "Increase cache capacity", assumptions),
+    plan("plan_restart", "Restart cache", ["Cache restart recovers capacity"], { cost: "low", risk: { overall: "low", factors: {}, reversible: true } }),
+  ],
+};
+
+test("challenge produces counterevidence + weak assumptions for a materially weak plan", () => {
+  const ps = DATA_ACCESS.plans();
+  const res = challengePlan(
+    { plans: ps, evidence: DATA_ACCESS.evidence, hypotheses: DATA_ACCESS.hypotheses, topHypothesis: DATA_ACCESS.top, simulations: [] },
+    "plan_cache"
+  );
+  assert.equal(res.ok, true);
+  const report = res.report;
+  assert.equal(report.verdict, "countered");
+  // Recorded contradiction from the top hypothesis + competitive alternative cause.
+  assert.ok(report.counterevidence.length >= 2, "expected meaningful counterevidence");
+  assert.ok(
+    report.counterevidence.some((c) => c.origin === "hypothesis"),
+    "counterevidence must include the recorded contradicted signal"
+  );
+  assert.ok(
+    report.counterevidence.some((c) => c.origin === "alternative-hypothesis"),
+    "counterevidence must surface the competing diagnosis"
+  );
+  // Weak assumptions: not backed by evidence / rest on unsettled diagnosis.
+  assert.ok(report.weakAssumptions.length >= 1, "expected at least one weak assumption");
+  for (const w of report.weakAssumptions) {
+    assert.equal(typeof w.assumption, "string");
+    assert.equal(typeof w.whyWeak, "string");
+    assert.ok(Array.isArray(w.backingEvidenceIds));
+  }
+  assert.ok(report.potentialFailureModes.length >= 1, "expected at least one failure mode");
+});
+
+test("challenge honestly reports 'none found' when the plan has no discovered weakness", () => {
+  const cleanHyp = {
+    id: "hyp_clean",
+    cause: "cache degradation",
+    confidence: 0.85,
+    supporting: ["cache hit rate dropped"],
+    counterevidence: [],
+    missingEvidence: [],
+    status: "supported",
+    basis: ["cache hit rate dropped (cacheHitRateEstimate=25)"],
+  };
+  const ps = [
+    plan("plan_clean", "Increase cache capacity", ["Cache pressure is the primary cause"]),
+    plan("plan_nothing", "Do nothing", ["Do nothing"], { isDoNothing: true, cost: "low", risk: { overall: "low", factors: {}, reversible: true } }),
+  ];
+  const res = challengePlan(
+    { plans: ps, evidence: [evidence("ev_cache_hit", "cacheHitRateEstimate", "Cache hit rate estimate")], hypotheses: [cleanHyp], topHypothesis: cleanHyp, simulations: [] },
+    "plan_clean"
+  );
+  assert.equal(res.ok, true);
+  const report = res.report;
+  assert.equal(report.verdict, "clear");
+  assert.equal(report.counterevidence.length, 0, "no counterevidence found -> none found honestly");
+  assert.equal(report.weakAssumptions.length, 0, "no weak assumptions found -> none found honestly");
+  // The plan is already the best lower-risk option -> no counterfactual alternative.
+  assert.equal(report.alternativePlan, null);
+});
+
+test("challenge is pure: it never mutates the context (state or permissions)", () => {
+  const ps = DATA_ACCESS.plans();
+  const ctx = {
+    plans: ps,
+    evidence: DATA_ACCESS.evidence,
+    hypotheses: DATA_ACCESS.hypotheses,
+    topHypothesis: DATA_ACCESS.top,
+    simulations: [],
+  };
+  const before = JSON.stringify(JSON.parse(JSON.stringify(ctx)));
+  challengePlan(ctx, "plan_cache");
+  challengePlan(ctx, "does-not-exist");
+  const after = JSON.stringify(ctx);
+  assert.equal(after, before, "challenge must not alter any state it is given");
+});
+
+test("challenge returns a controlled error for an unknown/absent planId", () => {
+  const ps = DATA_ACCESS.plans();
+  const res = challengePlan(
+    { plans: ps, evidence: DATA_ACCESS.evidence, hypotheses: DATA_ACCESS.hypotheses, topHypothesis: DATA_ACCESS.top, simulations: [] },
+    "plan_does_not_exist"
+  );
+  assert.equal(res.ok, false);
+  assert.equal(res.code, "UNKNOWN_PLAN");
+  assert.match(res.error, /unknown plan/);
+});
+
+test("challenge failure modes are tied to recorded data and simulation", () => {
+  const ps = [plan("plan_cache", "Increase cache capacity", ["Cache pressure is the primary cause"])];
+  const sims = [
+    {
+      plan: ps[0],
+      actionType: "increase_cache_capacity",
+      parameters: {},
+      prediction: null,
+      predictedKpis: { checkoutLatencyMs: 480, checkoutErrorRate: 12, checkoutSuccessRate: 88 },
+    },
+  ];
+  const res = challengePlan(
+    { plans: ps, evidence: DATA_ACCESS.evidence, hypotheses: DATA_ACCESS.hypotheses, topHypothesis: DATA_ACCESS.top, simulations: sims, current: { checkoutLatencyMs: 480, checkoutErrorRate: 12 } },
+    "plan_cache"
+  );
+  assert.equal(res.ok, true);
+  assert.ok(
+    res.report.potentialFailureModes.some((f) => f.tiedTo.includes("simulation")),
+    "a simulated-but-unimproved plan should surface a simulation-tied failure mode"
+  );
 });
