@@ -45,43 +45,45 @@ export function SystemPanel({ view }: { view: View }) {
       {metrics.length === 0 ? (
         <div className="empty">No metrics yet — start a scenario to observe the system.</div>
       ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Component</th>
-              <th>Utilization</th>
-              <th>Latency</th>
-              <th>Error</th>
-              <th>Queue</th>
-            </tr>
-          </thead>
-          <tbody>
-            {metrics.map((m) => (
-              <tr key={m.componentId}>
-                <td>
-                  <span className="row">
-                    <span className={`dot ${m.degraded ? "dot-warn" : "dot-ok"}`} />
-                    {m.componentId}
-                  </span>
-                </td>
-                <td>
-                  <span className="row">
-                    <span className="bar-track">
-                      <span
-                        className="bar-fill"
-                        style={{ width: `${Math.min(100, Number(m.utilization))}%`, background: barColor(m.utilization) }}
-                      />
-                    </span>
-                    {Math.round(Number(m.utilization))}%
-                  </span>
-                </td>
-                <td>{fmt(m.latencyMs, "ms")}</td>
-                <td className={healthTone(Number(m.errorRate)) === "ok" ? "" : "text-danger"}>{fmt(m.errorRate, "%")}</td>
-                <td>{Number(m.queueDepth) ?? 0}</td>
+        <div className="table-wrap">
+          <table className="table" aria-label="System metrics">
+            <thead>
+              <tr>
+                <th>Component</th>
+                <th>Utilization</th>
+                <th>Latency</th>
+                <th>Error</th>
+                <th>Queue</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {metrics.map((m) => (
+                <tr key={m.componentId}>
+                  <td>
+                    <span className="row">
+                      <span className={`dot ${m.degraded ? "dot-warn" : "dot-ok"}`} />
+                      {m.componentId}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="row">
+                      <span className="bar-track">
+                        <span
+                          className="bar-fill"
+                          style={{ width: `${Math.min(100, Number(m.utilization))}%`, background: barColor(m.utilization) }}
+                        />
+                      </span>
+                      {Math.round(Number(m.utilization))}%
+                    </span>
+                  </td>
+                  <td>{fmt(m.latencyMs, "ms")}</td>
+                  <td className={healthTone(Number(m.errorRate)) === "ok" ? "" : "text-danger"}>{fmt(m.errorRate, "%")}</td>
+                  <td>{Number(m.queueDepth) ?? 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );
@@ -123,26 +125,28 @@ export function EvidencePanel({ view }: { view: View }) {
       {evidence.length === 0 ? (
         <div className="empty">No evidence collected. Run the agent&apos;s investigation to gather structured signals.</div>
       ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Signal</th>
-              <th>Value</th>
-              <th>Source</th>
-              <th>Relevance</th>
-            </tr>
-          </thead>
-          <tbody>
-            {evidence.map((e, i) => (
-              <tr key={i}>
-                <td className="mono">{e.metric ?? e.componentId}</td>
-                <td>{e.value != null ? String(e.value) : "—"}</td>
-                <td className="text-dim">{e.source ?? "—"}</td>
-                <td>{e.relevance != null ? `${Math.round(Number(e.relevance) * 100)}%` : "—"}</td>
+        <div className="table-wrap">
+          <table className="table" aria-label="Evidence collected">
+            <thead>
+              <tr>
+                <th>Signal</th>
+                <th>Value</th>
+                <th>Source</th>
+                <th>Relevance</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {evidence.map((e, i) => (
+                <tr key={i}>
+                  <td className="mono">{e.metric ?? e.componentId}</td>
+                  <td>{e.value != null ? String(e.value) : "—"}</td>
+                  <td className="text-dim">{e.source ?? "—"}</td>
+                  <td>{e.relevance != null ? `${Math.round(Number(e.relevance) * 100)}%` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );
@@ -193,43 +197,45 @@ export function PlansPanel({ view }: { view: View }) {
       {plans.length === 0 ? (
         <div className="empty">No plans generated. Run the agent&apos;s reasoning to produce candidate remediations.</div>
       ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Plan</th>
-              <th>Actions</th>
-              <th>Risk</th>
-              <th>Reversibility</th>
-              <th>Blast</th>
-              <th>Assurance</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {plans.map((p) => (
-              <tr key={p.id} style={p.id === selectedId ? { background: "rgba(108,192,255,0.06)" } : undefined}>
-                <td>
-                  <strong>{p.name}</strong>
-                  <div className="text-faint mono" style={{ fontSize: 11 }}>
-                    {p.objective}
-                  </div>
-                </td>
-                <td className="mono">{p.actions?.map((a: any) => a.type).join(", ") || "—"}</td>
-                <td>
-                  <span className={`badge text-${riskTone(p.risk?.overall)}`}>{p.risk?.overall ?? "—"}</span>
-                </td>
-                <td className="text-dim" style={{ fontSize: 12 }}>
-                  {p.reversibility}
-                </td>
-                <td className="text-dim">{p.blastRadius}</td>
-                <td>{Math.round((p.confidence ?? 0) * 100)}%</td>
-                <td>
-                  {p.id === selectedId ? <span className="badge">selected</span> : <span className="text-faint">—</span>}
-                </td>
+        <div className="table-wrap">
+          <table className="table" aria-label="Plans comparison">
+            <thead>
+              <tr>
+                <th>Plan</th>
+                <th>Actions</th>
+                <th>Risk</th>
+                <th>Reversibility</th>
+                <th>Blast</th>
+                <th>Assurance</th>
+                <th />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {plans.map((p) => (
+                <tr key={p.id} style={p.id === selectedId ? { background: "rgba(108,192,255,0.06)" } : undefined}>
+                  <td>
+                    <strong>{p.name}</strong>
+                    <div className="text-faint mono" style={{ fontSize: 11 }}>
+                      {p.objective}
+                    </div>
+                  </td>
+                  <td className="mono">{p.actions?.map((a: any) => a.type).join(", ") || "—"}</td>
+                  <td>
+                    <span className={`badge text-${riskTone(p.risk?.overall)}`}>{p.risk?.overall ?? "—"}</span>
+                  </td>
+                  <td className="text-dim" style={{ fontSize: 12 }}>
+                    {p.reversibility}
+                  </td>
+                  <td className="text-dim">{p.blastRadius}</td>
+                  <td>{Math.round((p.confidence ?? 0) * 100)}%</td>
+                  <td>
+                    {p.id === selectedId ? <span className="badge">selected</span> : <span className="text-faint">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );
@@ -244,30 +250,32 @@ export function SimulationPanel({ view }: { view: View }) {
       {sims.length === 0 ? (
         <div className="empty">No simulated branches yet.</div>
       ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Plan</th>
-              <th>Action</th>
-              <th>Predicted checkout latency</th>
-              <th>Predicted health</th>
-              <th>Ok</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sims.map((s, i) => (
-              <tr key={i}>
-                <td>{s.plan?.name ?? "—"}</td>
-                <td className="mono">{s.actionType}</td>
-                <td>
-                  {s.predictedKpis?.checkoutLatencyMs != null ? `${s.predictedKpis.checkoutLatencyMs} ms` : "—"}
-                </td>
-                <td>{String(s.prediction?.kpis?.systemHealth ?? "—")}</td>
-                <td>{s.error ? <span className="text-danger">error</span> : "✓"}</td>
+        <div className="table-wrap">
+          <table className="table" aria-label="Simulation results">
+            <thead>
+              <tr>
+                <th>Plan</th>
+                <th>Action</th>
+                <th>Predicted checkout latency</th>
+                <th>Predicted health</th>
+                <th>Ok</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {sims.map((s, i) => (
+                <tr key={i}>
+                  <td>{s.plan?.name ?? "—"}</td>
+                  <td className="mono">{s.actionType}</td>
+                  <td>
+                    {s.predictedKpis?.checkoutLatencyMs != null ? `${s.predictedKpis.checkoutLatencyMs} ms` : "—"}
+                  </td>
+                  <td>{String(s.prediction?.kpis?.systemHealth ?? "—")}</td>
+                  <td>{s.error ? <span className="text-danger">error</span> : "✓"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );
