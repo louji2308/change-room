@@ -9,6 +9,7 @@
 
 import type { ToolName, WorkflowState, JsonSchemaField } from "@change-room/domain";
 import { TOOLS, getTool, toolAvailableInState, type ToolDefinition } from "./tools.js";
+import { classifyContent, isTrustedAsInstruction, type ContentClass } from "./security.js";
 
 /** Implemented by the Change Room application host. */
 export interface ToolRuntime {
@@ -64,6 +65,12 @@ export class WebmcpRegistry {
       if (field.enum && present && !field.enum.includes(String(input[key]))) {
         errors.push(`field '${key}' must be one of: ${field.enum.join(", ")}`);
       }
+      // Strict ID validation (Implementation.md §15.3: reject invalid IDs).
+      if (present && /Id$/.test(key)) {
+        if (typeof input[key] !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(input[key] as string)) {
+          errors.push(`field '${key}' is not a valid id`);
+        }
+      }
     }
     // Reject unknown fields.
     for (const key of Object.keys(input)) {
@@ -98,6 +105,19 @@ export class WebmcpRegistry {
     if (!res.ok) return { ok: false, error: res.error ?? "tool execution failed" };
     return { ok: true, data: res.data };
   }
+}
+
+/**
+ * Classify tool output content by origin so the agent can distinguish trusted
+ * system data from untrusted user/external/agent material. Returns the data
+ * unchanged alongside its trust class. Pure and side-effect free.
+ */
+export function classifyToolOutput<T>(data: T, origin: ContentClass = "trusted_system"): { data: T; trust: ContentClass; treatAsInstruction: boolean } {
+  return {
+    data,
+    trust: origin,
+    treatAsInstruction: isTrustedAsInstruction(origin),
+  };
 }
 
 function typeMatches(type: JsonSchemaField["type"], value: unknown): boolean {

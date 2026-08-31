@@ -12,3 +12,17 @@ export type { ToolDefinition } from "./tools.js";
 export { WebmcpRegistry } from "./registry.js";
 export type { ToolRuntime, InvocationResult } from "./registry.js";
 export { registerWithWebmcp, emitToolChange, webmcpAvailable } from "./adapter.js";
+export {
+  classifyContent,
+  isTrustedAsInstruction,
+  isUntrusted,
+  isValidId,
+  validateIdField,
+  validateActionType,
+  validateActor,
+  validateParamInRange,
+  ACTION_TYPE_ENUM,
+  ACTOR_ENUM,
+  PARAM_RANGES,
+} from "./security.js";
+export type { ContentClass } from "./security.js";
