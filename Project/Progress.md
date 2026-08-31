@@ -171,11 +171,74 @@ Guided by the discrete-event, causal world-model design in `Simulator.md`.
 - [x] Tests (20 passing in control suite): 2 new `reversibleOnly` delegation tests in `packages/control/test/control.test.js`
 - [x] Verified: `pnpm test` all 9 suites green (120 tests total); `apps/change-room` builds and typechecks; end-to-end API check confirms delegate → 3 plans → pause blocks reason (409 PAUSED) → takeover advances stateVersion with 3 human mutations → resume replans to PLAN_READY
 
-### PHASE 13 — Agent Challenge Mode — ⏳ NEXT
+### PHASE 13 — Agent Challenge Mode — ✅ COMPLETE
 
-Not yet started. `challenge_plan` lets the human challenge an agent recommendation; the agent must respond with supporting evidence, counterevidence, weak assumptions, potential failure modes, and an alternative plan without modifying state or permissions. See `Implementation.md` for the full plan.
+- [x] Challenge engine (`packages/agent/src/challenge.ts`): pure read-only `challengePlan()` — returns `ChallengeReport` with `supportingEvidence`, `counterevidence`, `weakAssumptions`, `potentialFailureModes`, `alternativePlan`; never mutates state or permissions
+- [x] Types: `ChallengeReport`, `ChallengeResult`, `SupportingEvidenceRef`, `CounterEvidence`, `WeakAssumption`, `FailureMode`, `AlternativePlan`
+- [x] Session wiring (`apps/change-room/src/lib/session.ts`): `challenge_plan` validated and dispatched in `runTool`; unknown plan returns controlled `UNKNOWN_PLAN` error
+- [x] Re-exports from `packages/agent/src/index.ts`
+- [x] Tests (17 agent + 15 webmcp passing): meaningful counterevidence, honest "clear" verdict, state/permission unaltered, invalid planId handled
+- [x] Verified: `pnpm test` 128 tests green across 10 packages
+
+### PHASE 14 — Concurrency and Stale State — ⏳ PENDING
+
+Handle multi-actor environments (Human, Agent, Automation); concurrent change → stale plan detection → reconciliation. See `Implementation.md` lines 2095–2157.
+
+### PHASE 15 — Security Hardening — ⏳ PENDING
+
+Protect the agent-facing application: untrusted content classification, tool authorization, input validation, secret exclusion, prompt-injection resistance. See `Implementation.md` lines 2160–2258.
+
+### PHASE 16 — Scenario Suite + Blind Evaluation — ✅ COMPLETE (core: 16.1–16.4; 16.5/16.6 deferred to Phase 14)
+
+- [x] Single failures (16.1): cache-failure, traffic-surge, database-saturation, bad-deployment, queue-backlog, configuration-regression — all tuned for genuine degradation and recovery
+- [x] Cascading (16.2): `cascade-cache-db-checkout` — root-first remediation required
+- [x] Misleading evidence (16.3): `misleading-deployment` — deployment present but NOT the cause
+- [x] Compound (16.4): `compound-traffic-cache` — two independent causes
+- [x] Blind evaluation harness (`packages/scenarios/src/evaluate.ts`): 12 structured metrics
+- [x] Evaluation package (`packages/evaluation/`): real orchestrator as operator + policy check surface
+- [x] Tests (22 scenarios + 9 evaluation passing); 139 tests total green
+
+### PHASE 17 — WebMCP Evaluation — ⏳ PENDING
+
+Test whether an actual agent can use the WebMCP surface reliably: tool selection, parameter validation, multi-step tasks, safety boundaries, recovery. See `Implementation.md` lines 2357–2444.
+
+### PHASE 18 — Performance and Reliability — ⏳ PENDING
+
+Stability under repeated operations: 10+ scenario cycles without state corruption, event duplication, tool registration errors, or memory leaks. See `Implementation.md` lines 2448–2493.
+
+### PHASE 19 — Failure Injection for the Agent — ⏳ PENDING
+
+Test the system when the agent misbehaves: wrong hypothesis, wrong parameter, tool timeout, missing evidence, failed simulation, execution error, verification error, stale state. See `Implementation.md` lines 2496–2530.
+
+### PHASE 20 — Final UX Polish — ⏳ PENDING
+
+After correctness is stable: visual hierarchy, loading states, errors, animations, tool-call feedback, state transitions, mobile/responsive, accessibility. See `Implementation.md` lines 2533–2565.
+
+### PHASE 21 — Signature Demo Path — ⏳ PENDING
+
+One flawless end-to-end demo: cache degradation → investigation → hypotheses → plans → simulate → approve → execute → deviation → reassess → recover → replay. See `Implementation.md` lines 2568–2721.
+
+### PHASE 22 — Final Repository Quality — ✅ COMPLETE
+
+- [x] README rewritten (accurate Change Room setup/usage, not Medusa template)
+- [x] LICENSE: MIT text verified; copyright credit added for derivative fork
+- [x] `docs/webmcp.md`: WebMCP tool surface, registration, agent connection
+- [x] `docs/scenarios.md`: scenario definition, running, verification, authoring
+- [x] Verified: `pnpm test` green, `pnpm install --frozen-lockfile` valid, all referenced file paths exist
+
+### PHASE 23 — Final Live-App Verification — ⏳ PENDING
+
+Clean-browser end-to-end test: open app → Change Room → start scenario → agent discovers tools → investigates → plans → simulation → approval → execution → verification → recovery → replay. See `Implementation.md` lines 2743–2763.
+
+### PHASE 24 — Chrome DevTools MCP Final Audit — ⏳ PENDING
+
+Full DevTools audit: console errors, network failures/CORS, WebMCP tool surface, application state, UI quality. See `Implementation.md` lines 2766–2836.
+
+### PHASE 25 — Final Acceptance Test — ⏳ PENDING
+
+All criteria: commerce integration, agent reasoning, challenge mode, concurrency, security, scenario suite, WebMCP eval, performance, failure injection, UX, demo path, docs, live-app, DevTools, 120+ tests green. See `Implementation.md` lines 2838–3144.
 
 ---
 
-> **Note on repo state:** The git history and the package suite confirm Phases 0–12 are implemented and green
-> (120 tests across 9 packages; `apps/change-room` builds). This tracker is maintained as phases are verified.
+> **Note on repo state:** Phases 0–13, 16 (core), and 22 are implemented and green (147 tests across 11 packages;
+> `apps/change-room` builds). Phases 14–15, 17–21, 23–25 in progress. This tracker is maintained as phases are verified.
