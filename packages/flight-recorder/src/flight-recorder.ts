@@ -14,6 +14,8 @@ import { buildReplay, type ReplayResult } from "./replay.js";
 export interface FlightRecorderOptions {
   /** Maximum number of retained events (oldest dropped beyond this). */
   limit?: number;
+  /** When true, consecutive identical events (same actor+type+detail) are rejected. */
+  deduplicate?: boolean;
 }
 
 export type RecordInput = Omit<ChangeRoomEvent, "seq" | "timestamp"> & {
@@ -30,14 +32,21 @@ export interface FlightRecorderSummary {
 
 export class FlightRecorder {
   readonly limit: number;
+  private readonly deduplicate: boolean;
   private readonly events: ChangeRoomEvent[] = [];
   private nextSeq = 1;
+  private lastFingerprint?: string;
 
   constructor(options: FlightRecorderOptions = {}) {
     this.limit = options.limit ?? 10000;
+    this.deduplicate = options.deduplicate ?? false;
   }
 
   record(input: RecordInput): ChangeRoomEvent {
+    const fp = eventFingerprint(input);
+    if (this.deduplicate && this.lastFingerprint === fp) {
+      return { ...this.events[this.events.length - 1]! };
+    }
     const event: ChangeRoomEvent = {
       ...input,
       seq: this.nextSeq++,
@@ -48,7 +57,14 @@ export class FlightRecorder {
     while (this.events.length > this.limit) {
       this.events.shift();
     }
+    this.lastFingerprint = fp;
     return event;
+  }
+
+  reset(): void {
+    this.events.length = 0;
+    this.nextSeq = 1;
+    this.lastFingerprint = undefined;
   }
 
   all(): ChangeRoomEvent[] {
@@ -86,4 +102,8 @@ export class FlightRecorder {
       lastSeq: this.events.length ? this.events[this.events.length - 1]!.seq : 0,
     };
   }
+}
+
+function eventFingerprint(input: RecordInput): string {
+  return `${input.actor}:${input.type}:${JSON.stringify(input.detail ?? {})}`;
 }
