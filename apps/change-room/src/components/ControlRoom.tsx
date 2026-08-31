@@ -17,6 +17,58 @@ const ACTIONS: Array<{ id: string; label: string; needs?: string[]; danger?: boo
   { id: "reset", label: "Reset", needs: [] },
 ];
 
+const STEPS = [
+  "CONTRACT_SET",
+  "INVESTIGATING",
+  "PLAN_READY",
+  "SIMULATED",
+  "WAITING_FOR_APPROVAL",
+  "APPROVED",
+  "EXECUTING",
+  "EXECUTED",
+  "VERIFYING",
+  "COMPLETE",
+] as const;
+
+const ACTIVE_STATES = new Set(["EXECUTING", "EXECUTED", "VERIFYING", "RECOVERING", "SIMULATING"]);
+const ERROR_STATES = new Set(["DEVIATION", "RECOVERING"]);
+
+function stepStatus(step: string, current: string): "past" | "current" | "future" {
+  const ci = STEPS.indexOf(step as any);
+  const cur = STEPS.indexOf(current as any);
+  if (ci < cur) return "past";
+  if (ci === cur) return "current";
+  return "future";
+}
+
+function WorkflowStepper({ workflow }: { workflow: string }) {
+  const normalized = workflow === "IDLE" ? "" : workflow;
+  return (
+    <nav className="stepper" role="navigation" aria-label="Workflow progress">
+      {STEPS.map((step, i) => {
+        const status = normalized ? stepStatus(step, normalized) : "future";
+        const cls = [
+          "step",
+          status === "past" ? "step-past" : "",
+          status === "current" ? `step-current${ACTIVE_STATES.has(workflow) ? " step-pulse" : ""}` : "",
+          status === "future" ? "step-future" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return (
+          <span key={step} style={{ display: "contents" }}>
+            {i > 0 && <span className="step-connector" aria-hidden="true" />}
+            <span className={cls} aria-current={status === "current" ? "step" : undefined}>
+              <span className="step-dot" aria-hidden="true" />
+              {step.replace(/_/g, " ")}
+            </span>
+          </span>
+        );
+      })}
+    </nav>
+  );
+}
+
 export default function ControlRoom() {
   const [view, setView] = useState<View | null>(null);
   const [scenarios, setScenarios] = useState<any[]>([]);
@@ -61,6 +113,7 @@ export default function ControlRoom() {
     async (id: string, body?: Record<string, unknown>) => {
       setBusy(id);
       setError(null);
+      setFlash(null);
       try {
         const res: SessionResponse = await api(id, body);
         if (res.view) setView(res.view);
@@ -89,12 +142,9 @@ export default function ControlRoom() {
           <h1>Change Room</h1>
         </div>
         {error ? (
-          <div role="alert" className="empty text-danger">
-            Error loading session: {error}
-            <br />
-            <button className="button" onClick={() => window.location.reload()} style={{ marginTop: "0.5rem" }}>
-              Reload
-            </button>
+          <div role="alert" className="alert alert-error">
+            <span className="alert-icon" aria-hidden="true">!</span>
+            <span>Error loading session: {error}</span>
           </div>
         ) : (
           <div style={{ display: "grid", gap: "0.75rem" }} role="status" aria-label="Loading Change Room">
@@ -123,13 +173,16 @@ export default function ControlRoom() {
     </select>
   );
 
+  const isBusy = busy !== null;
+  const isActive = ACTIVE_STATES.has(view.workflow);
+
   return (
     <div style={{ padding: "1rem", maxWidth: 1280, margin: "0 auto" }}>
-      <header className="spread" style={{ marginBottom: "1rem" }}>
+      <header className={`spread${isActive ? " header-active" : ""}`} style={{ marginBottom: "0.5rem" }}>
         <div className="row" style={{ gap: "0.75rem" }}>
           <h1>Change Room</h1>
-          <span className="badge">
-            <span className={`dot ${view.paused ? "dot-warn" : view.workflow === "COMPLETE" ? "dot-ok" : "dot-info"}`} />
+          <span className="badge" role="status" aria-label={`Workflow status: ${view.workflow}`}>
+            <span className={`dot ${view.paused ? "dot-warn" : ERROR_STATES.has(view.workflow) ? "dot-danger" : view.workflow === "COMPLETE" ? "dot-ok" : "dot-info"}`} />
             {view.paused ? "PAUSED — " : ""}
             {view.statusLabel} ({view.workflow})
           </span>
@@ -139,17 +192,33 @@ export default function ControlRoom() {
         </span>
       </header>
 
-      {error && (
-        <div
-          role="alert"
-          className="empty text-danger"
-          style={{ marginBottom: "0.75rem", textAlign: "left" }}
-        >
-          {error}
-        </div>
-      )}
+      <WorkflowStepper workflow={view.workflow} />
 
-      <div className="statusbar" style={{ marginBottom: "1rem" }}>
+      <div aria-live="polite" aria-atomic="true" style={{ minHeight: 0 }}>
+        {error && (
+          <div
+            role="alert"
+            className="alert alert-error"
+            style={{ marginTop: "var(--sp-3)", marginBottom: "var(--sp-3)" }}
+          >
+            <span className="alert-icon" aria-hidden="true">!</span>
+            <span>{error}</span>
+          </div>
+        )}
+
+        {flash && (
+          <div
+            role="status"
+            className="alert alert-flash"
+            style={{ marginTop: "var(--sp-3)", marginBottom: "var(--sp-3)" }}
+          >
+            <span className="alert-icon" aria-hidden="true">&#10003;</span>
+            <span>{flash}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="statusbar" style={{ margin: "var(--sp-3) 0" }}>
         <span className="text-dim" style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.06em" }}>
           Controls
         </span>
@@ -159,22 +228,23 @@ export default function ControlRoom() {
             <button
               key={a.id}
               className={`button${a.danger ? " button-danger" : ""}${a.id === "approve" ? " button-primary" : ""}`}
-              disabled={busy !== null}
+              disabled={isBusy}
               onClick={() => run(a.id, a.body?.(view))}
+              aria-busy={busy === a.id || undefined}
             >
-              {busy === a.id ? "…" : a.label}
+              {busy === a.id ? <><span className="spinner" aria-hidden="true" />Working…</> : a.label}
             </button>
           ))}
         </span>
+        {isBusy && (
+          <span className="busy-indicator" role="status" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            Executing {busy}…
+          </span>
+        )}
       </div>
 
-      {flash && (
-        <div role="status" className="text-info mono" style={{ marginBottom: "0.75rem", fontSize: 12 }}>
-          {flash}
-        </div>
-      )}
-
-      <div className="stack">
+      <div className="stack" style={{ marginTop: "var(--sp-2)" }}>
         <SystemPanel view={view} />
         <div className="grid-2">
           <IncidentPanel view={view} />

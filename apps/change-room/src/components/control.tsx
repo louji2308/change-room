@@ -65,26 +65,28 @@ export function VerificationPanel({ view }: { view: View }) {
             <span className="text-dim mono">{active.summary}</span>
           </div>
           {active.deviations?.length > 0 && (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Metric</th>
-                  <th>Predicted</th>
-                  <th>Actual</th>
-                  <th>Delta</th>
-                </tr>
-              </thead>
-              <tbody>
-                {active.deviations.map((d: any, i: number) => (
-                  <tr key={i}>
-                    <td className="mono">{d.metric}</td>
-                    <td>{num(d.predicted)}</td>
-                    <td>{num(d.actual)}</td>
-                    <td className={verdictTone(d.ratio > 1 ? "REGRESSION" : "HEALTHY")}>{num(d.delta)}</td>
+            <div className="table-wrap">
+              <table className="table" aria-label="Verification deviations">
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    <th>Predicted</th>
+                    <th>Actual</th>
+                    <th>Delta</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {active.deviations.map((d: any, i: number) => (
+                    <tr key={i}>
+                      <td className="mono">{d.metric}</td>
+                      <td>{num(d.predicted)}</td>
+                      <td>{num(d.actual)}</td>
+                      <td className={verdictTone(d.ratio > 1 ? "REGRESSION" : "HEALTHY")}>{num(d.delta)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </>
       )}
@@ -218,40 +220,45 @@ export function DelegationPanel({ view }: { view: View }) {
             className="button"
             disabled={busy !== null}
             onClick={() => run("delegate", { riskCeiling: ceiling, durationMs: Number(durationMs), reversibleOnly })}
+            aria-busy={busy === "delegate" || undefined}
           >
-            Grant delegation
+            {busy === "delegate" ? <><span className="spinner" aria-hidden="true" />Working…</> : "Grant delegation"}
           </button>
-          <button className="button button-danger" disabled={busy !== null || !d} onClick={() => run("revoke_delegation")}>
-            Revoke
+          <button className="button button-danger" disabled={busy !== null || !d} onClick={() => run("revoke_delegation")} aria-busy={busy === "revoke_delegation" || undefined}>
+            {busy === "revoke_delegation" ? <><span className="spinner" aria-hidden="true" />Working…</> : "Revoke"}
           </button>
           {view.paused ? (
-            <button className="button button-primary" disabled={busy !== null} onClick={() => run("resume")}>
-              Resume agent
+            <button className="button button-primary" disabled={busy !== null} onClick={() => run("resume")} aria-busy={busy === "resume" || undefined}>
+              {busy === "resume" ? <><span className="spinner" aria-hidden="true" />Working…</> : "Resume agent"}
             </button>
           ) : (
-            <button className="button" disabled={busy !== null} onClick={() => run("pause")}>
-              Pause agent
+            <button className="button" disabled={busy !== null} onClick={() => run("pause")} aria-busy={busy === "pause" || undefined}>
+              {busy === "pause" ? <><span className="spinner" aria-hidden="true" />Working…</> : "Pause agent"}
             </button>
           )}
         </div>
         <div className="row" style={{ gap: "0.5rem", marginTop: "0.25rem" }}>
-          <button className="button button-danger" disabled={busy !== null} onClick={() => run("takeover", { actionType: "restore_configuration", note: "human applied restore_configuration manually" })}>
-            Human takeover (restore config)
+          <button className="button button-danger" disabled={busy !== null} onClick={() => run("takeover", { actionType: "restore_configuration", note: "human applied restore_configuration manually" })} aria-busy={busy === "takeover" || undefined}>
+            {busy === "takeover" ? <><span className="spinner" aria-hidden="true" />Working…</> : "Human takeover (restore config)"}
           </button>
-          <button className="button button-danger" disabled={busy !== null} onClick={() => run("takeover", { actionType: "scale_database", note: "human scaled database manually" })}>
-            Human takeover (scale DB)
+          <button className="button button-danger" disabled={busy !== null} onClick={() => run("takeover", { actionType: "scale_database", note: "human scaled database manually" })} aria-busy={busy === "takeover" || undefined}>
+            {busy === "takeover" ? <><span className="spinner" aria-hidden="true" />Working…</> : "Human takeover (scale DB)"}
           </button>
         </div>
       </div>
 
       {msg && (
-        <div role="status" className="text-info mono" style={{ marginTop: "0.5rem", fontSize: 12 }}>
-          {msg}
+        <div role="status" className="alert alert-flash" style={{ marginTop: "0.5rem" }}>
+          <span className="alert-icon" aria-hidden="true">&#10003;</span>
+          <span className="mono" style={{ fontSize: 12 }}>{msg}</span>
         </div>
       )}
       {view.humanMutations?.length > 0 && (
-        <div className="text-warn mono" style={{ marginTop: "0.5rem", fontSize: 12 }}>
-          {view.humanMutations.length} human mutation(s) recorded — current plans may be stale.
+        <div role="alert" className="alert alert-error" style={{ marginTop: "0.5rem" }}>
+          <span className="alert-icon" aria-hidden="true">!</span>
+          <span className="mono" style={{ fontSize: 12 }}>
+            {view.humanMutations.length} human mutation(s) recorded — current plans may be stale.
+          </span>
         </div>
       )}
     </section>

@@ -284,3 +284,192 @@ p {
   flex-wrap: wrap;
   gap: var(--sp-2);
 }
+
+/* ----- phase 20: workflow stepper ----- */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  overflow-x: auto;
+  padding: var(--sp-2) 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.stepper::-webkit-scrollbar { height: 4px; }
+.stepper::-webkit-scrollbar-track { background: transparent; }
+.stepper::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+  border: 1px solid transparent;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.step-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--border);
+  flex: none;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.step-past {
+  color: var(--text-dim);
+}
+.step-past .step-dot {
+  background: var(--ok);
+}
+.step-current {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(108, 192, 255, 0.08);
+}
+.step-current .step-dot {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+.step-current.step-pulse .step-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+.step-future {
+  color: var(--text-faint);
+}
+.step-connector {
+  width: 18px;
+  height: 1px;
+  background: var(--border);
+  flex: none;
+}
+.step-past + .step-connector {
+  background: var(--ok);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 4px var(--accent); opacity: 1; }
+  50% { box-shadow: 0 0 10px var(--accent); opacity: 0.7; }
+}
+
+/* ----- phase 20: spinner / busy ----- */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 999%;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+  margin-right: 0.35rem;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.busy-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 12px;
+  color: var(--accent);
+  font-family: ui-monospace, monospace;
+  animation: pulse-text 1.8s ease-in-out infinite;
+}
+@keyframes pulse-text {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ----- phase 20: active header pulse ----- */
+.header-active .badge {
+  animation: header-pulse 2s ease-in-out infinite;
+}
+@keyframes header-pulse {
+  0%, 100% { border-color: var(--border); }
+  50% { border-color: var(--accent); }
+}
+
+/* ----- phase 20: alert-style error/flash ----- */
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  font-size: 13px;
+  line-height: 1.45;
+  border: 1px solid;
+}
+.alert-error {
+  background: rgba(229, 83, 75, 0.08);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.alert-flash {
+  background: rgba(74, 163, 235, 0.08);
+  border-color: var(--info);
+  color: var(--info);
+}
+.alert-icon {
+  flex: none;
+  font-size: 14px;
+  line-height: 1;
+  margin-top: 1px;
+}
+
+/* ----- phase 20: panel enter animation ----- */
+.panel {
+  animation: panel-enter 0.3s ease both;
+}
+@keyframes panel-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ----- phase 20: bar-fill transition ----- */
+.bar-fill {
+  transition: width 0.5s ease, background 0.3s ease;
+}
+
+/* ----- phase 20: table scroll wrapper ----- */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.table-wrap::-webkit-scrollbar { height: 4px; }
+.table-wrap::-webkit-scrollbar-track { background: transparent; }
+.table-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+
+/* ----- phase 20: responsive fixes ----- */
+@media (max-width: 767px) {
+  .statusbar {
+    gap: var(--sp-2);
+  }
+  .stepper {
+    padding: var(--sp-1) 0;
+  }
+  .step {
+    font-size: 10px;
+    padding: var(--sp-1) var(--sp-2);
+  }
+  .step-connector {
+    width: 10px;
+  }
+  .kv {
+    grid-template-columns: 1fr;
+    gap: var(--sp-1) var(--sp-2);
+  }
+  .kv dt {
+    padding-top: var(--sp-2);
+  }
+}
