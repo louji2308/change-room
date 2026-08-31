@@ -202,17 +202,45 @@ Protect the agent-facing application: untrusted content classification, tool aut
 
 Test whether an actual agent can use the WebMCP surface reliably: tool selection, parameter validation, multi-step tasks, safety boundaries, recovery. See `Implementation.md` lines 2357–2444.
 
-### PHASE 18 — Performance and Reliability — ⏳ PENDING
+### PHASE 18 — Performance and Reliability — ✅ COMPLETE
 
-Stability under repeated operations: 10+ scenario cycles without state corruption, event duplication, tool registration errors, or memory leaks. See `Implementation.md` lines 2448–2493.
+Stability under repeated operations without state corruption, duplicate events, or memory leaks.
 
-### PHASE 19 — Failure Injection for the Agent — ⏳ PENDING
+- [x] Event idempotency / duplicate-event protection (`packages/flight-recorder/src/flight-recorder.ts`): `deduplicate` option rejects consecutive identical events without consuming a seq; `limit` option caps retained events; new `reset()` clears events+seq
+- [x] Repeated scenario-cycle reliability (`packages/scenarios/test/scenarios.test.js`): full lifecycle (setup → start → step → execute → recover → reset) for **10+ cycles** across the 6 single-failure scenarios; asserts no ground-truth leak, healthy reset, blindness preserved after reset
+- [x] Rapid tool-call stability (`packages/webmcp/test/webmcp.test.js`): 50+ rapid `inspect_system`/`investigate` invocations and 30 state-changing invocations — no exceptions, consistent results, exact call counts, no event duplication
+- [x] Simulation determinism under repetition (`packages/simulator/test/simulator.test.js`): 20 identical seeded runs produce byte-identical predictions (no shared mutable state across repeats)
+- [x] Unbounded-growth guards: `StateStore.reset()`, `FlightRecorder` limit/reset; no store grows across cycles
+- [x] Tests: 147 → 158 (11 new); `pnpm test` fully green (20/20 tasks)
 
-Test the system when the agent misbehaves: wrong hypothesis, wrong parameter, tool timeout, missing evidence, failed simulation, execution error, verification error, stale state. See `Implementation.md` lines 2496–2530.
+### PHASE 19 — Failure Injection for the Agent — ✅ COMPLETE
 
-### PHASE 20 — Final UX Polish — ⏳ PENDING
+Test the system when the agent behaves badly; every failure must recover gracefully.
 
-After correctness is stable: visual hierarchy, loading states, errors, animations, tool-call feedback, state transitions, mobile/responsive, accessibility. See `Implementation.md` lines 2533–2565.
+- [x] New package `packages/failure-injection` (`@change-room/failure-injection`) with `buildFailureContext()` + 8 controlled injectors and an 18-test `node --test` suite
+- [x] Injected wrong hypothesis → recovery reasoning still returns a valid action, state intact, audit event recorded
+- [x] Injected wrong parameter → schema/precondition rejection, no state mutation, clear error
+- [x] Injected tool timeout → controlled TIMEOUT error, workflow recoverable, `execution_completed` audit event
+- [x] Injected missing evidence → agent does NOT assume the source exists; retains uncertainty (confidence ≤ 0.9, no invented certainty)
+- [x] Injected failed simulation → execution blocked, workflow safe, audit event
+- [x] Injected execution error → handled as failed (distinct from partial), no state corruption, `unmet` recorded
+- [x] Injected verification error → classified safely as UNKNOWN, workflow recoverable
+- [x] Injected stale state → plan at version N rejected by the gate when world is N+1 — no unauthorized execution
+- [x] Cross-cutting: no ground-truth leaks through any path, safe `decideRecovery` for all verdicts, ≥1 audit event per failure, monotonic seq/timestamps, immutability proven
+- [x] Tests: 16 new packaged tests (18 total in package); `pnpm test` fully green (20/20 tasks)
+
+### PHASE 20 — Final UX Polish — ✅ COMPLETE
+
+After correctness is stable: visual hierarchy, loading states, errors, animations, tool-call feedback, state transitions, mobile/responsive, accessibility.
+
+- [x] Workflow state stepper (`ControlRoom.tsx`): compact horizontal pipeline of all lifecycle phases, color-coded past/current/future, `aria-current` on active, pulse on active transitions, horizontally scrollable on mobile
+- [x] Header status badge now reflects error/active/complete states with clear dot + color
+- [x] Loading states: CSS spinner + "Working…" on active button, disabled controls while busy, global busy indicator (`aria-live`)
+- [x] Error/flash messages: alert-style with icon, color, `role="alert"`/`role="status"`, `aria-live`
+- [x] Responsive: table-wrap for horizontal scroll on narrow screens, kv grid collapses to one column on mobile, statusbar/buttons wrap
+- [x] Accessibility: aria-labels on sections/panels/tables, `aria-busy`, decorative spinners `aria-hidden`, no skipped heading levels
+- [x] Animations: panel enter fade, phase pulse, bar-fill width/background transitions
+- [x] `pnpm --filter @change-room/app typecheck` passes; `next build` compiles all 6 pages cleanly
 
 ### PHASE 21 — Signature Demo Path — ⏳ PENDING
 
@@ -240,5 +268,5 @@ All criteria: commerce integration, agent reasoning, challenge mode, concurrency
 
 ---
 
-> **Note on repo state:** Phases 0–13, 16 (core), and 22 are implemented and green (147 tests across 11 packages;
-> `apps/change-room` builds). Phases 14–15, 17–21, 23–25 in progress. This tracker is maintained as phases are verified.
+> **Note on repo state:** Phases 0–13, 16 (core), 18, 19, 20, and 22 are implemented and green (158+ tests across 12 packages;
+> `apps/change-room` builds and typechecks). Phases 14–15, 17, 21, 23–25 in progress. This tracker is maintained as phases are verified.
