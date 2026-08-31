@@ -180,15 +180,25 @@ Guided by the discrete-event, causal world-model design in `Simulator.md`.
 - [x] Tests (17 agent + 15 webmcp passing): meaningful counterevidence, honest "clear" verdict, state/permission unaltered, invalid planId handled
 - [x] Verified: `pnpm test` 128 tests green across 10 packages
 
-### PHASE 14 — Concurrency and Stale State — ⏳ PENDING
+### PHASE 14 — Concurrency and Stale State — ✅ COMPLETE
 
-Handle multi-actor environments (Human, Agent, Automation); concurrent change → stale plan detection → reconciliation. See `Implementation.md` lines 2095–2157.
+- [x] Domain (`packages/domain/src/workflow.ts`): `STALE` workflow state + workflow order + tool availability (inspect/investigate/generate_plans) + human label "Plan stale — state changed"
+- [x] Session (`apps/change-room/src/lib/session.ts`): stale-plan enforcement — a plan built on an older stateVersion must not execute
+- [x] Agent reconciliation: orchestrator re-observes → compares → updates hypothesis → replans from STALE
+- [x] Tests (control 18→27, agent 12→20): plan at version X → state advances to X+1 → execution blocked → agent replans
+- [x] Verified: `pnpm test` green (mandatory "plan must not execute" case asserted)
 
-### PHASE 15 — Security Hardening — ⏳ PENDING
+### PHASE 15 — Security Hardening — ✅ COMPLETE
 
-Protect the agent-facing application: untrusted content classification, tool authorization, input validation, secret exclusion, prompt-injection resistance. See `Implementation.md` lines 2160–2258.
+- [x] `packages/webmcp/src/security.ts`: content classification (trusted_system / user / external / agent_generated); only trusted_system is treated as an instruction; isValidId / validateIdField / validateActionType / validateActor / validateParamInRange
+- [x] Registry (`registry.ts`): strict input validation — invalid plan ids, unknown fields, enum/type/range checks; `classifyToolOutput` helper
+- [x] Session (`apps/change-room/src/lib/session.ts`): unknown-tool rejection, `*Id` field validation, `inspect_history` limit range check, mutation tools gated to Change Control
+- [x] Re-exports via `packages/webmcp/src/index.ts`
+- [x] Prompt-injection resistance: malicious log text is inert data, never an instruction; poisoned input rejected before reaching runtime
+- [x] Tests (`packages/webmcp/test/security.test.js`, 15 new → webmcp suite 15→30): content classification, ID/enum/range, unknown fields, malicious log, unauthorized mutation blocked
+- [x] Verified: `pnpm test` green (172 tests across 11 packages)
 
-### PHASE 16 — Scenario Suite + Blind Evaluation — ✅ COMPLETE (core: 16.1–16.4; 16.5/16.6 deferred to Phase 14)
+### PHASE 16 — Scenario Suite + Blind Evaluation — ✅ COMPLETE (16.1–16.4 core; 16.5/16.6 now covered by Phase 14)
 
 - [x] Single failures (16.1): cache-failure, traffic-surge, database-saturation, bad-deployment, queue-backlog, configuration-regression — all tuned for genuine degradation and recovery
 - [x] Cascading (16.2): `cascade-cache-db-checkout` — root-first remediation required
@@ -240,5 +250,5 @@ All criteria: commerce integration, agent reasoning, challenge mode, concurrency
 
 ---
 
-> **Note on repo state:** Phases 0–13, 16 (core), and 22 are implemented and green (147 tests across 11 packages;
-> `apps/change-room` builds). Phases 14–15, 17–21, 23–25 in progress. This tracker is maintained as phases are verified.
+> **Note on repo state:** Phases 0–16 and 22 are implemented and green (172 tests across 11 packages;
+> `apps/change-room` builds). Phases 17–21, 23–25 in progress. This tracker is maintained as phases are verified.
