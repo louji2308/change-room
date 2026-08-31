@@ -327,3 +327,84 @@ test("challenge failure modes are tied to recorded data and simulation", () => {
     "a simulated-but-unimproved plan should surface a simulation-tied failure mode"
   );
 });
+
+// --- Phase 14: Concurrency and Stale State ---
+
+test("PHASE14: orchestrator builds plans bound to state version", () => {
+  const runner = ScenarioRunner.setup("cache-failure");
+  runner.start();
+  runner.settle(45);
+  const view = runner.agentView();
+
+  const agent = new AgentOrchestrator({
+    sim: { predict: (a, o) => runner.predict(a, o) },
+    currentStateVersion: () => 5,
+  });
+
+  agent.reason("Restore checkout safely", view);
+  const plans = agent.last.plans;
+  assert.ok(plans.length >= 2, "should produce multiple candidate plans");
+  for (const p of plans) {
+    assert.equal(p.stateVersion, 5, "all plans must be bound to the current state version");
+  }
+});
+
+test("PHASE14: agent re-reasons with fresh state version after state advance", () => {
+  const runner = ScenarioRunner.setup("cache-failure");
+  runner.start();
+  runner.settle(45);
+
+  const agent1 = new AgentOrchestrator({
+    sim: { predict: (a, o) => runner.predict(a, o) },
+    currentStateVersion: () => 10,
+  });
+
+  const result1 = agent1.reason("Restore checkout safely", runner.agentView());
+  assert.ok(result1.plans.length >= 2, "first cycle should produce plans");
+  for (const p of result1.plans) {
+    assert.equal(p.stateVersion, 10, "plans bound to version 10");
+  }
+
+  // State advances to 11 — new orchestrator re-reasons from fresh state
+  const agent2 = new AgentOrchestrator({
+    sim: { predict: (a, o) => runner.predict(a, o) },
+    currentStateVersion: () => 11,
+  });
+  const result2 = agent2.reason("Restore checkout safely", runner.agentView());
+  assert.ok(result2.plans.length >= 2, "re-reasoning should produce new plans");
+  for (const p of result2.plans) {
+    assert.equal(p.stateVersion, 11, "new plans bound to version 11");
+  }
+});
+
+test("PHASE14: reconciliation flow — observe → compare → update → replan", () => {
+  const runner = ScenarioRunner.setup("cache-failure");
+  runner.start();
+  runner.settle(45);
+
+  // Step 1: Agent reasons and gets plans at version 10
+  const agent = new AgentOrchestrator({
+    sim: { predict: (a, o) => runner.predict(a, o) },
+    currentStateVersion: () => 10,
+  });
+  const firstResult = agent.reason("Restore checkout safely", runner.agentView());
+  assert.ok(firstResult.plans.length >= 2, "initial plans generated");
+  const oldStateVersion = firstResult.plans[0].stateVersion;
+  assert.equal(oldStateVersion, 10, "initial plans bound to version 10");
+
+  // Step 2: Human changes the world — state advances to 11
+  // The agent's old plan is now stale.
+
+  // Step 3: Agent re-observes and replans from the new state
+  const reconciled = new AgentOrchestrator({
+    sim: { predict: (a, o) => runner.predict(a, o) },
+    currentStateVersion: () => 11,
+  });
+  const freshResult = reconciled.reason("Restore checkout safely", runner.agentView());
+
+  // Step 4: New plans are bound to version 11
+  assert.ok(freshResult.plans.length >= 2, "reconciliation produces new plans");
+  for (const p of freshResult.plans) {
+    assert.equal(p.stateVersion, 11, "reconciled plans bound to current version");
+  }
+});

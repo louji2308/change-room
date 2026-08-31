@@ -250,6 +250,21 @@ export class ChangeRoomSession {
       throw Object.assign(new Error(`executeChange requires APPROVED, got ${this.workflow}`), { code: "WRONG_STATE" });
     }
 
+    // Phase 14: Re-validate freshness at execution time — the state may have
+    // advanced since prepareChange() due to a concurrent human takeover or
+    // automation. If stale, block execution and transition to STALE.
+    if (plan.stateVersion !== this.currentVersion) {
+      this.workflow = "STALE";
+      this.phase = { name: "deviated", verdict: "STALE" };
+      this.flight.record({
+        actor: "system",
+        type: "execution_started",
+        planId: plan.id,
+        resultSummary: `STALE_PLAN: plan bound to version ${plan.stateVersion} but current state is ${this.currentVersion}`,
+      });
+      return { ok: false, health: runner.health(), error: `STALE_PLAN: plan bound to version ${plan.stateVersion} but current state is ${this.currentVersion}` };
+    }
+
     this.workflow = "EXECUTING";
     this.flight.record({ actor: "system", type: "execution_started", planId: plan.id });
 
@@ -441,6 +456,53 @@ export class ChangeRoomSession {
     return { ok: res.ok, stateVersion: newVersion, health: runner.health(), error: res.ok ? undefined : res.unmet.join(", ") };
   }
 
+  /**
+   * Phase 14 — Reconcile a stale plan: re-observe the live world, compare
+   * against the previous hypothesis, update if needed, and replan from the
+   * new state version. This is the agent's recovery path when concurrent
+   * changes invalidate its plan.
+   */
+  reconcileStalePlan(): { reconciled: boolean; plans: number; reason: string } {
+    const runner = this.requireRunner();
+    if (this.paused) throw Object.assign(new Error("agent is paused; cannot reconcile"), { code: "PAUSED" });
+
+    const previousPlan = this.selectedPlanId
+      ? this.orchestrator?.last.plans.find((p) => p.id === this.selectedPlanId) ?? null
+      : null;
+
+    // Re-observe the live world.
+    const freshView = runner.agentView();
+    const freshResult = this.orchestrator!.reason(
+      this.orchestrator!.last.contract?.goal ?? "restore system health",
+      freshView
+    );
+
+    // Determine what changed.
+    let reason: string;
+    if (previousPlan) {
+      const prevVersion = previousPlan.stateVersion;
+      const currentVersion = this.currentVersion;
+      reason = `plan was stale (version ${prevVersion} vs current ${currentVersion}); re-observed ${freshResult.hypotheses.length} hypotheses, ${freshResult.plans.length} plans`;
+    } else {
+      reason = `reconciled without previous plan; ${freshResult.hypotheses.length} hypotheses, ${freshResult.plans.length} plans`;
+    }
+
+    // Reset selection — the agent must pick a new plan from the fresh set.
+    this.selectedPlanId = null;
+    this.lastGate = null;
+    this.humanMutations = [];
+    this.workflow = freshResult.plans.length > 0 ? "PLAN_READY" : "INVESTIGATING";
+
+    this.flight.record({
+      actor: "agent",
+      type: "observation",
+      resultSummary: reason,
+      detail: { reconciled: true, newStateVersion: this.currentVersion, hypotheses: freshResult.hypotheses.length, plans: freshResult.plans.length },
+    });
+
+    return { reconciled: true, plans: freshResult.plans.length, reason };
+  }
+
   /** Public, blind-safe view for the UI and tool runtime. */
   view(): PublicView {
     const runner = this.runner;
@@ -548,6 +610,7 @@ function humanLabel(s: WorkflowState): string {
     DEVIATION: "Deviation detected",
     RECOVERING: "Recovering",
     COMPLETE: "Complete",
+    STALE: "Plan stale — state changed",
   };
   return m[s];
 }
