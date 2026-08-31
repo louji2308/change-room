@@ -373,3 +373,58 @@ test("blind evaluation diagnosis favors the true single cause", () => {
   assert.equal(run.metrics.finalSystemHealth.value, "healthy");
   assert.equal(run.metrics.rollbackSuccess.value, true);
 });
+
+test("10+ repeated lifecycle cycles across 6 scenarios: no corruption, blindness preserved", () => {
+  const SCENARIO_IDS = [
+    "cache-failure",
+    "traffic-surge",
+    "database-saturation",
+    "bad-deployment",
+    "queue-backlog",
+    "configuration-regression",
+  ];
+  const CYCLES = 10;
+  const params = {
+    increase_cache_capacity: { newCapacityGB: 30 },
+    restart_cache: {},
+    scale_database: { factor: 1.5 },
+    scale_service: { service: "checkout", factor: 1.5 },
+    restore_configuration: {},
+    change_configuration: {},
+    rollback_deployment: {},
+  };
+
+  for (const id of SCENARIO_IDS) {
+    const expected = getScenario(id).expectedRecovery;
+    for (let cycle = 0; cycle < CYCLES; cycle++) {
+      const runner = ScenarioRunner.setup(id);
+      runner.start();
+      for (let s = 0; s < 120; s++) runner.step(1);
+
+      const h = runner.health();
+      assert.ok(h === "degraded" || h === "down", `${id} cycle ${cycle}: incident must be active (got ${h})`);
+
+      const view = runner.agentView();
+      assert.ok(view.health === "degraded" || view.health === "down", `${id} cycle ${cycle}: view health sane`);
+
+      const blob = JSON.stringify(view);
+      assert.ok(!blob.includes(id), `${id} cycle ${cycle}: scenario id leaked`);
+      assert.ok(!blob.includes("seed"), `${id} cycle ${cycle}: seed leaked`);
+      assert.ok(!blob.includes("disturbances"), `${id} cycle ${cycle}: disturbances leaked`);
+
+      for (const action of expected) {
+        runner.executeChange(action, params[action]);
+        for (let i = 0; i < 60; i++) runner.step(1);
+      }
+      assert.equal(runner.health(), "healthy", `${id} cycle ${cycle}: should recover`);
+
+      runner.reset();
+      assert.equal(runner.health(), "healthy", `${id} cycle ${cycle}: reset baseline healthy`);
+
+      const rv = runner.agentView();
+      const rb = JSON.stringify(rv);
+      assert.ok(!rb.includes(id), `${id} cycle ${cycle}: id leaked after reset`);
+      assert.ok(!rb.includes("seed"), `${id} cycle ${cycle}: seed leaked after reset`);
+    }
+  }
+});

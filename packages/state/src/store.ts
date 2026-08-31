@@ -178,6 +178,13 @@ export class StateStore {
     return snap;
   }
 
+  reset(): void {
+    this.current = createBaselineState();
+    this.version = 0;
+    this.transitions.length = 0;
+    this.snapshots.clear();
+  }
+
   getSnapshot(id: SnapshotId): StateSnapshot | undefined {
     return this.snapshots.get(id);
   }

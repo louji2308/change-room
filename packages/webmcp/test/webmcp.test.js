@@ -165,3 +165,40 @@ test("adapter registers tools when a host is present", async () => {
     delete (globalThis).document;
   }
 });
+
+test("rapid sequential tool invocations: no exceptions, consistent results, correct call count", async () => {
+  const { runtime, calls } = makeRuntime("INVESTIGATING", {
+    inspect_system: () => ({ health: "degraded" }),
+    investigate: (a) => ({ evidence: ["e1"] }),
+    get_evidence: () => ({ items: [] }),
+  });
+  const reg = new WebmcpRegistry(runtime);
+  const N = 50;
+  for (let i = 0; i < N; i++) {
+    const res = await reg.invoke("inspect_system", {});
+    assert.equal(res.ok, true, `invocation ${i} must succeed`);
+    assert.deepEqual(res.data, { health: "degraded" }, `invocation ${i}: consistent result`);
+  }
+  assert.equal(calls.length, N, "runtime must receive exactly N calls");
+
+  for (let i = 0; i < N; i++) {
+    const res = await reg.invoke("investigate", {});
+    assert.equal(res.ok, true, `investigate ${i} must succeed`);
+  }
+  assert.equal(calls.length, N * 2, "runtime must receive exactly 2N calls total");
+});
+
+test("rapid tool invocations with state changes: no corruption", async () => {
+  let currentState = "INVESTIGATING";
+  const runtime = {
+    workflowState: () => currentState,
+    execute: async (name, args) => ({ ok: true, data: { name, state: currentState } }),
+  };
+  const reg = new WebmcpRegistry(runtime);
+  for (let i = 0; i < 30; i++) {
+    const res = await reg.invoke("inspect_system", {});
+    assert.equal(res.ok, true, `invocation ${i} must succeed`);
+    assert.equal(res.data.state, currentState, `invocation ${i}: state must match`);
+    if (i === 10) currentState = "INVESTIGATING";
+  }
+});

@@ -178,3 +178,72 @@ test("realistic walk produces a complete replay ending in incident_complete", ()
   assert.equal(replay.steps.length, 11);
   assert.equal(replay.steps.at(-1).type, "incident_complete");
 });
+
+test("no duplicate seq: N rapid records produce N distinct seqs", () => {
+  const fr = new FlightRecorder();
+  const N = 200;
+  const seqs = new Set();
+  for (let i = 0; i < N; i++) {
+    const e = fr.record({ actor: "agent", type: "observation", detail: { i } });
+    seqs.add(e.seq);
+  }
+  assert.equal(seqs.size, N, "every seq must be unique");
+  assert.equal(fr.all().length, N);
+});
+
+test("deduplicate: consecutive identical events are rejected", () => {
+  const fr = new FlightRecorder({ deduplicate: true });
+  const a = fr.record({ actor: "agent", type: "observation", detail: { msg: "same" } });
+  const b = fr.record({ actor: "agent", type: "observation", detail: { msg: "same" } });
+  const c = fr.record({ actor: "agent", type: "observation", detail: { msg: "same" } });
+  assert.equal(fr.all().length, 1, "only one event stored");
+  assert.equal(a.seq, b.seq, "dedup returns same seq");
+  assert.equal(b.seq, c.seq);
+});
+
+test("deduplicate: non-consecutive identical events are kept", () => {
+  const fr = new FlightRecorder({ deduplicate: true });
+  fr.record({ actor: "agent", type: "observation", detail: { x: 1 } });
+  fr.record({ actor: "agent", type: "hypothesis_added", detail: { x: 1 } });
+  fr.record({ actor: "agent", type: "observation", detail: { x: 1 } });
+  assert.equal(fr.all().length, 3, "all three kept (different types in between)");
+});
+
+test("summary counts match replay after dedup", () => {
+  const fr = new FlightRecorder({ deduplicate: true });
+  fr.record({ actor: "agent", type: "observation", detail: { v: 1 } });
+  fr.record({ actor: "agent", type: "observation", detail: { v: 1 } });
+  fr.record({ actor: "agent", type: "observation", detail: { v: 2 } });
+  fr.record({ actor: "human", type: "human_approved" });
+  const s = fr.summary();
+  const r = fr.replay();
+  assert.equal(s.count, r.steps.length, "summary count must match replay steps");
+  assert.equal(s.count, 3);
+  assert.equal(s.byType.observation, 2);
+  assert.equal(s.byType.human_approved, 1);
+});
+
+test("reset clears all events and resets seq", () => {
+  const fr = new FlightRecorder();
+  fr.record({ actor: "agent", type: "observation" });
+  fr.record({ actor: "agent", type: "hypothesis_added" });
+  assert.equal(fr.all().length, 2);
+  fr.reset();
+  assert.equal(fr.all().length, 0);
+  const e = fr.record({ actor: "agent", type: "observation" });
+  assert.equal(e.seq, 1, "seq resets to 1 after reset");
+});
+
+test("bounded growth: limit caps events across many records", () => {
+  const fr = new FlightRecorder({ limit: 50 });
+  for (let i = 0; i < 500; i++) {
+    fr.record({ actor: "agent", type: "observation", detail: { i } });
+  }
+  assert.equal(fr.all().length, 50, "event count must not exceed limit");
+  const s = fr.summary();
+  assert.equal(s.count, 50);
+  assert.equal(s.firstSeq, 451, "oldest retained seq");
+  assert.equal(s.lastSeq, 500);
+  const r = fr.replay();
+  assert.equal(r.steps.length, 50, "replay must match stored count");
+});

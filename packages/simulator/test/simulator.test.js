@@ -260,3 +260,38 @@ test("full seeded run is reproducible in outcome", () => {
   const b = (() => { const s = new WorldSimulator({ seed: 555, scenario: "demo" }); runIncident(s); return s.observe().kpis; })();
   assert.deepEqual(a, b);
 });
+
+test("determinism under repetition: same seed + same action yields identical results across 20 runs", () => {
+  const seed = 42;
+  const action = createAction("increase_cache_capacity", { newCapacityGB: 30 });
+  const results = [];
+  for (let i = 0; i < 20; i++) {
+    const sim = new WorldSimulator({ seed, scenario: "demo" });
+    sim.runBaseline(60);
+    sim.startIncident();
+    for (let s = 0; s < 60; s++) sim.step(1);
+    const pred = sim.predict(action);
+    results.push({
+      ok: pred.ok,
+      fingerprint: pred.fingerprint,
+      checkoutLatencyMs: pred.kpis.checkoutLatencyMs,
+      checkoutErrorRate: pred.kpis.checkoutErrorRate,
+    });
+  }
+  for (let i = 1; i < results.length; i++) {
+    assert.deepEqual(results[i], results[0], `run ${i} must match run 0`);
+  }
+});
+
+test("simulator events do not leak across fresh instances (bounded per instance)", () => {
+  const sim1 = new WorldSimulator({ seed: 1, scenario: "demo" });
+  sim1.runBaseline(60);
+  sim1.startIncident();
+  for (let i = 0; i < 100; i++) sim1.step(1);
+  const count1 = sim1.observe().events.length;
+  assert.ok(count1 > 0, "first simulator produced events");
+
+  const sim2 = new WorldSimulator({ seed: 1, scenario: "demo" });
+  const count2 = sim2.observe().events.length;
+  assert.equal(count2, 0, "fresh simulator has no events yet");
+});
