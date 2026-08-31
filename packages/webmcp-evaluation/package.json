@@ -1,0 +1,34 @@
+{
+  "name": "@change-room/webmcp-evaluation",
+  "version": "0.1.0",
+  "description": "Change Room WebMCP evaluation harness — proves an agent can drive the semantic tool surface reliably (tool selection, parameters, multi-step tasks, safety, recovery).",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "@change-room/agent": "workspace:*",
+    "@change-room/control": "workspace:*",
+    "@change-room/domain": "workspace:*",
+    "@change-room/flight-recorder": "workspace:*",
+    "@change-room/scenarios": "workspace:*",
+    "@change-room/simulator": "workspace:*",
+    "@change-room/verification": "workspace:*",
+    "@change-room/webmcp": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^17.0.21",
+    "typescript": "^5.1.0"
+  }
+}

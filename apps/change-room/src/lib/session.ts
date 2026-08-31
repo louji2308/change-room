@@ -26,7 +26,7 @@ import {
 } from "@change-room/control";
 import { FlightRecorder } from "@change-room/flight-recorder";
 import { PredictionVsReality } from "@change-room/verification";
-import { isValidId, validateActionType } from "@change-room/webmcp";
+import { isValidId } from "@change-room/webmcp";
 
 const AGENT_LEVEL = "L3" as const; // execute-with-approval: consequential changes need a human.
 
@@ -104,6 +104,11 @@ export class ChangeRoomSession {
   /** Mutations committed by the human since the current plan (conflict detection). */
   private humanMutations: StateMutation[] = [];
 
+  /** Most recent agent goal (Phase 17: reused by the generate_plans tool). */
+  private lastGoal: string | null = null;
+  /** Most recent human-decision request id (Phase 17). */
+  private lastRequestId: string | null = null;
+
   /** Scenario the sandbox is running (named scenario id), for admin/debug only. */
   private scenarioName: string | null = null;
 
@@ -114,6 +119,8 @@ export class ChangeRoomSession {
     this.phase = { name: "idle" };
     this.selectedPlanId = null;
     this.lastGate = null;
+    this.lastGoal = null;
+    this.lastRequestId = null;
     this.flight = new FlightRecorder();
     this.verification = new PredictionVsReality();
     this.scenarioName = null;
@@ -154,6 +161,7 @@ export class ChangeRoomSession {
   reason(goal: string): ReturnType<AgentOrchestrator["reason"]> {
     const runner = this.requireRunner();
     if (this.paused) throw Object.assign(new Error("agent is paused; cannot reason"), { code: "PAUSED" });
+    this.lastGoal = goal;
     const view = runner.agentView();
     const result = this.orchestrator!.reason(goal, view);
     this.workflow = result.plans.length > 0 ? "PLAN_READY" : "INVESTIGATING";
@@ -216,6 +224,29 @@ export class ChangeRoomSession {
       this.phase = gate.approvalRequired ? { name: "awaiting", requestId: `req-${++this.requestCounter}` } : { name: "approved" };
     }
     this.flight.record({ actor: "system", type: "policy_checked", planId: plan.id, resultSummary: `${gate.stage}: ${gate.reason} (${gate.approvalRequired ? "approval required" : "allowed"})` });
+    return gate;
+  }
+
+  /**
+   * Read-only form of `prepareChange` used by the `validate_policy` WebMCP tool.
+   * Computes the gate decision for the current selected plan WITHOUT recording a
+   * prediction or advancing the workflow — so a validation call never mutates
+   * state or double-transitions. Returns the gate result untouched.
+   */
+  validateChange(): GateDecision {
+    const runner = this.requireRunner();
+    const plan = this.selectedPlan();
+    const gate = evaluateGate(
+      {
+        plan,
+        currentStateVersion: this.currentVersion,
+        permission: this.permission,
+        delegation: this.delegation,
+        now: Date.now(),
+        mutationsSince: this.humanMutations,
+      },
+      this.policy
+    );
     return gate;
   }
 
@@ -331,6 +362,7 @@ export class ChangeRoomSession {
   /** Agent requests a human decision (blind-safe ask). */
   requestHumanDecision(ask: string): { requestId: string } {
     const id = `req-${++this.requestCounter}`;
+    this.lastRequestId = id;
     this.phase = { name: "awaiting", requestId: id };
     this.workflow = "WAITING_FOR_APPROVAL";
     this.flight.record({ actor: "agent", type: "approval_requested", planId: this.selectedPlanId ?? undefined, resultSummary: ask, detail: { requestId: id } });
@@ -595,6 +627,13 @@ export class ChangeRoomSession {
       case "inspect_system":
         return { ok: true, data: { health: runner.health(), kpis: runner.agentView().kpis, metrics: runner.agentView().metrics } };
       case "investigate": {
+        // Phase 17 (WebMCP evaluation): advance the state machine as an agent
+        // observes — INTENT → INVESTIGATING — so the tool-following flow can
+        // progress to planning via the WebMCP surface alone.
+        if (this.workflow === "CONTRACT_SET") {
+          this.workflow = "INVESTIGATING";
+          this.flight.record({ actor: "agent", type: "observation", resultSummary: "agent began investigation via WebMCP", detail: { workflow: this.workflow } });
+        }
         const inv = this.orchestrator?.investigate(runner.agentView());
         return { ok: true, data: inv };
       }
@@ -605,6 +644,80 @@ export class ChangeRoomSession {
           return { ok: false, error: "invalid input: 'limit' must be an integer in [1, 10000]" };
         }
         return { ok: true, data: this.flight.replay() };
+      case "generate_plans": {
+        // Phase 17: an agent reaches planning directly through the tool surface.
+        if (this.workflow !== "CONTRACT_SET" && this.workflow !== "INVESTIGATING" && this.workflow !== "DEVIATION" && this.workflow !== "STALE") {
+          return { ok: false, error: `generate_plans requires CONTRACT_SET/INVESTIGATING/DEVIATION/STALE, got ${this.workflow}` };
+        }
+        const goal = this.lastGoal ?? "restore system health";
+        const result = this.reason(goal);
+        return { ok: true, data: { hypotheses: result.hypotheses, plans: result.plans, topHypothesis: result.topHypothesis } };
+      }
+      case "compare_plans": {
+        return { ok: true, data: { plans: this.orchestrator?.last.plans ?? [], simulations: this.orchestrator?.last.simulations ?? [] } };
+      }
+      case "simulate_plan": {
+        if (this.workflow !== "PLAN_READY" && this.workflow !== "SIMULATED") {
+          return { ok: false, error: `simulate_plan requires PLAN_READY or SIMULATED, got ${this.workflow}` };
+        }
+        const planId = String(args.planId ?? "");
+        if (!isValidId(planId)) {
+          return { ok: false, error: `invalid input: 'planId' is not a valid id` };
+        }
+        this.selectPlan(planId);
+        const sim = this.orchestrator!.last.simulations.find((s) => s.plan.id === planId);
+        return { ok: true, data: sim ?? { error: "no simulation recorded for plan" } };
+      }
+      case "prepare_change": {
+        if (this.workflow !== "SIMULATED" && this.workflow !== "WAITING_FOR_APPROVAL") {
+          return { ok: false, error: `prepare_change requires SIMULATED, got ${this.workflow}` };
+        }
+        const gate = this.prepareChange();
+        return { ok: true, data: gate };
+      }
+      case "validate_policy": {
+        // Pure read-only: compute the gate without recording or transitioning.
+        if (this.workflow !== "SIMULATED" && this.workflow !== "WAITING_FOR_APPROVAL") {
+          return { ok: false, error: `validate_policy requires SIMULATED, got ${this.workflow}` };
+        }
+        return { ok: true, data: this.validateChange() };
+      }
+      case "request_human_decision": {
+        const ask = String(args.ask ?? "agent requests a decision");
+        const requestId = String(args.requestId ?? this.lastRequestId ?? "");
+        const res = this.requestHumanDecision(ask);
+        this.lastRequestId = requestId || res.requestId;
+        return { ok: true, data: res };
+      }
+      case "execute_change": {
+        if (this.workflow !== "APPROVED") {
+          return { ok: false, error: `execute_change requires APPROVED authority; current state is ${this.workflow}` };
+        }
+        // An agent may pass the approved planId; reconcile with the selected plan.
+        if (args.planId !== undefined) {
+          const planId = String(args.planId);
+          const selected = this.selectedPlan();
+          if (planId !== selected.id) {
+            return { ok: false, error: `execute_change: planId '${planId}' is not the approved plan '${selected.id}'` };
+          }
+        }
+        const res = this.executeChange();
+        return { ok: true, data: res };
+      }
+      case "verify_change": {
+        if (this.workflow !== "EXECUTED" && this.workflow !== "EXECUTING" && this.workflow !== "VERIFYING" && this.workflow !== "DEVIATION" && this.workflow !== "RECOVERING" && this.workflow !== "COMPLETE") {
+          return { ok: false, error: `verify_change requires an executed/recovered change, got ${this.workflow}` };
+        }
+        const res = this.verifyChange();
+        return { ok: true, data: res };
+      }
+      case "rollback_change": {
+        if (this.workflow !== "EXECUTED" && this.workflow !== "DEVIATION" && this.workflow !== "RECOVERING") {
+          return { ok: false, error: `rollback_change requires EXECUTED/DEVIATION/RECOVERING, got ${this.workflow}` };
+        }
+        this.rollbackChange();
+        return { ok: true, data: { health: runner.health() } };
+      }
       case "challenge_plan": {
         if (this.workflow !== "PLAN_READY" && this.workflow !== "SIMULATED") {
           return { ok: false, error: `challenge_plan requires PLAN_READY or SIMULATED, got ${this.workflow}` };
@@ -628,16 +741,8 @@ export class ChangeRoomSession {
         if (!res.ok) return { ok: false, error: res.error };
         return { ok: true, data: res.report };
       }
-      default: {
-        // Mutation/action tools are not dispatched from runTool in this runtime;
-        // they flow through the Change Control boundary. Reject anything that
-        // never routes to a real handler.
-        const invalidAction = validateActionType((args as Record<string, unknown>).actionType);
-        if (name.startsWith("execute_") || name === "rollback_change") {
-          return { ok: false, error: `tool '${name}' requires approval through Change Control; use the session API` };
-        }
+      default:
         return { ok: false, error: `tool '${name}' not implemented in this runtime` };
-      }
     }
   }
 }

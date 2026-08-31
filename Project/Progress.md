@@ -208,9 +208,15 @@ Guided by the discrete-event, causal world-model design in `Simulator.md`.
 - [x] Evaluation package (`packages/evaluation/`): real orchestrator as operator + policy check surface
 - [x] Tests (22 scenarios + 9 evaluation passing); 139 tests total green
 
-### PHASE 17 — WebMCP Evaluation — ⏳ PENDING
+### PHASE 17 — WebMCP Evaluation — ✅ COMPLETE
 
-Test whether an actual agent can use the WebMCP surface reliably: tool selection, parameter validation, multi-step tasks, safety boundaries, recovery. See `Implementation.md` lines 2357–2444.
+Prove an actual agent can use the WebMCP semantic tool surface reliably: tool selection, parameter validation, multi-step tasks, safety boundaries, recovery.
+
+- [x] `apps/change-room/src/lib/session.ts`: completed the tool surface — `runTool` now handles the full lifecycle (`generate_plans`, `compare_plans`, `simulate_plan`, `prepare_change`, `validate_policy`, `request_human_decision`, `execute_change`, `verify_change`, `rollback_change`) instead of rejecting mutation tools as "use the session API"; `investigate` advances `CONTRACT_SET → INVESTIGATING`; added read-only `validateChange()` (gate via `evaluateGate`, no mutation) + `lastGoal`/`lastRequestId` tracking; dropped unused `validateActionType` import
+- [x] New package `packages/webmcp-evaluation` (`@change-room/webmcp-evaluation`): `WebMCPRuntime` (faithful package-level `ToolRuntime` over the real `ScenarioRunner` + `AgentOrchestrator` + `evaluateGate`; blind-safe, no ground-truth leak) + `planForTask` deterministic scripted agent policy + `runEvaluation()` harness
+- [x] 6-test `node --test` suite (`packages/webmcp-evaluation/test/webmcp-evaluation.test.js`) driving the real `WebmcpRegistry`: 17.1 tool selection, 17.2 parameter validation (wrong-type/missing/unknown), 17.3 multi-step observe→plan→simulate→prepare→approve→execute→verify, 17.4 safety boundaries (no approval / no authority / phantom plan all blocked), 17.5 recovery (injected execution failure → rollback), plus full 5-dimension `runEvaluation` → PASS
+- [x] Verified against the real tool schema (per-tool `planId`/`requestId`+`ask` required; state-gating and read-only enforcement)
+- [x] Tests: 201 → 207 (6 new); `pnpm --filter @change-room/webmcp-evaluation test` green, app typecheck clean
 
 ### PHASE 18 — Performance and Reliability — ✅ COMPLETE
 
