@@ -171,3 +171,78 @@ test("gate rejects a high-risk plan for an L2 agent", () => {
   assert.equal(d.allowed, false);
   assert.ok(["permission", "authority"].includes(d.stage));
 });
+
+// --- Phase 14: Concurrency and Stale State ---
+
+test("PHASE14: plan created at version 10, current state version 11 → plan must NOT execute (mandatory verification)", () => {
+  const policy = new PolicyEngine({ rules: defaultRules() });
+  const p = plan("increase_cache_capacity", 10);
+  const d = evaluateGate({ plan: p, currentStateVersion: 11, permission: { granted: [], level: "L3" }, delegation: null, now: NOW }, policy);
+  assert.equal(d.allowed, false, "stale plan must be rejected");
+  assert.equal(d.stage, "freshness", "rejection must come from the freshness stage");
+  assert.ok(d.detail.planVersion === 10, "detail must record plan version 10");
+  assert.ok(d.detail.currentVersion === 11, "detail must record current version 11");
+});
+
+test("PHASE14: plan at version 10 is fresh when current is also 10", () => {
+  const policy = new PolicyEngine({ rules: defaultRules() });
+  const p = plan("increase_cache_capacity", 10);
+  const d = evaluateGate({ plan: p, currentStateVersion: 10, permission: { granted: [], level: "L3" }, delegation: null, now: NOW }, policy);
+  assert.equal(d.allowed, true, "fresh plan should pass gate");
+  assert.notEqual(d.stage, "freshness", "should not fail at freshness stage");
+});
+
+test("PHASE14: concurrent human change on cache resource invalidates a cache plan", () => {
+  const p = plan("increase_cache_capacity", 10);
+  const mutations = [
+    { resource: "cache", actor: "human", version: 11, timestamp: NOW },
+  ];
+  const conflict = detectConflicts(p, mutations, 11);
+  assert.equal(conflict.conflicted, true, "must detect conflict on cache resource");
+  assert.equal(conflict.conflicts[0].resource, "cache");
+  assert.equal(conflict.conflicts[0].mutation.actor, "human");
+});
+
+test("PHASE14: concurrent human change on unrelated resource does NOT invalidate cache plan", () => {
+  const p = plan("increase_cache_capacity", 10);
+  const mutations = [
+    { resource: "database", actor: "human", version: 11, timestamp: NOW },
+  ];
+  const conflict = detectConflicts(p, mutations, 11);
+  assert.equal(conflict.conflicted, false, "unrelated mutation must not conflict");
+});
+
+test("PHASE14: gate rejects plan with both stale version AND concurrent conflict", () => {
+  const policy = new PolicyEngine({ rules: defaultRules() });
+  const p = plan("increase_cache_capacity", 10);
+  const mutations = [{ resource: "cache", actor: "human", version: 11, timestamp: NOW }];
+  const d = evaluateGate({
+    plan: p,
+    currentStateVersion: 11,
+    mutationsSince: mutations,
+    permission: { granted: [], level: "L3" },
+    delegation: null,
+    now: NOW,
+  }, policy);
+  assert.equal(d.allowed, false, "must be rejected");
+  assert.equal(d.stage, "freshness", "freshness check fires before conflict check");
+});
+
+test("PHASE14: stale plan detection is version-monotonic (10→12 is also stale)", () => {
+  const s10_v11 = validatePlanFreshness(10, 11);
+  const s10_v12 = validatePlanFreshness(10, 12);
+  const s10_v100 = validatePlanFreshness(10, 100);
+  assert.equal(s10_v11.ok, false);
+  assert.equal(s10_v12.ok, false);
+  assert.equal(s10_v100.ok, false);
+});
+
+test("PHASE14: stale plan status includes planVersion and currentVersion for diagnostics", () => {
+  const result = validatePlanFreshness(10, 11);
+  assert.equal(result.ok, false);
+  assert.equal(result.stale, true);
+  assert.equal(result.planVersion, 10);
+  assert.equal(result.currentVersion, 11);
+  assert.ok(typeof result.reason === "string");
+  assert.ok(result.reason.includes("STALE_PLAN"));
+});

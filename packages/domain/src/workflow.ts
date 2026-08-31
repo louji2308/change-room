@@ -19,7 +19,8 @@ export type WorkflowState =
   | "VERIFYING"
   | "DEVIATION"
   | "RECOVERING"
-  | "COMPLETE";
+  | "COMPLETE"
+  | "STALE";
 
 export const WORKFLOW_ORDER: WorkflowState[] = [
   "IDLE",
@@ -35,6 +36,7 @@ export const WORKFLOW_ORDER: WorkflowState[] = [
   "DEVIATION",
   "RECOVERING",
   "COMPLETE",
+  "STALE",
 ];
 
 export interface WorkflowStatus {
@@ -59,6 +61,7 @@ const AVAILABLE_BY_STATE: Record<WorkflowState, string[]> = {
   DEVIATION: ["investigate", "generate_plans", "rollback_change", "request_human_decision"],
   RECOVERING: ["verify_change", "rollback_change"],
   COMPLETE: ["verify_change", "inspect_history"],
+  STALE: ["inspect_system", "investigate", "generate_plans"],
 };
 
 export function workflowStatus(state: WorkflowState): WorkflowStatus {
@@ -80,6 +83,7 @@ export function humanLabel(state: WorkflowState): string {
     DEVIATION: "Deviation detected",
     RECOVERING: "Recovering",
     COMPLETE: "Complete",
+    STALE: "Plan stale — state changed",
   };
   return map[state];
 }

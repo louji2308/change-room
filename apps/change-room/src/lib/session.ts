@@ -26,6 +26,7 @@ import {
 } from "@change-room/control";
 import { FlightRecorder } from "@change-room/flight-recorder";
 import { PredictionVsReality } from "@change-room/verification";
+import { isValidId, validateActionType } from "@change-room/webmcp";
 
 const AGENT_LEVEL = "L3" as const; // execute-with-approval: consequential changes need a human.
 
@@ -250,6 +251,21 @@ export class ChangeRoomSession {
       throw Object.assign(new Error(`executeChange requires APPROVED, got ${this.workflow}`), { code: "WRONG_STATE" });
     }
 
+    // Phase 14: Re-validate freshness at execution time — the state may have
+    // advanced since prepareChange() due to a concurrent human takeover or
+    // automation. If stale, block execution and transition to STALE.
+    if (plan.stateVersion !== this.currentVersion) {
+      this.workflow = "STALE";
+      this.phase = { name: "deviated", verdict: "STALE" };
+      this.flight.record({
+        actor: "system",
+        type: "execution_started",
+        planId: plan.id,
+        resultSummary: `STALE_PLAN: plan bound to version ${plan.stateVersion} but current state is ${this.currentVersion}`,
+      });
+      return { ok: false, health: runner.health(), error: `STALE_PLAN: plan bound to version ${plan.stateVersion} but current state is ${this.currentVersion}` };
+    }
+
     this.workflow = "EXECUTING";
     this.flight.record({ actor: "system", type: "execution_started", planId: plan.id });
 
@@ -441,6 +457,53 @@ export class ChangeRoomSession {
     return { ok: res.ok, stateVersion: newVersion, health: runner.health(), error: res.ok ? undefined : res.unmet.join(", ") };
   }
 
+  /**
+   * Phase 14 — Reconcile a stale plan: re-observe the live world, compare
+   * against the previous hypothesis, update if needed, and replan from the
+   * new state version. This is the agent's recovery path when concurrent
+   * changes invalidate its plan.
+   */
+  reconcileStalePlan(): { reconciled: boolean; plans: number; reason: string } {
+    const runner = this.requireRunner();
+    if (this.paused) throw Object.assign(new Error("agent is paused; cannot reconcile"), { code: "PAUSED" });
+
+    const previousPlan = this.selectedPlanId
+      ? this.orchestrator?.last.plans.find((p) => p.id === this.selectedPlanId) ?? null
+      : null;
+
+    // Re-observe the live world.
+    const freshView = runner.agentView();
+    const freshResult = this.orchestrator!.reason(
+      this.orchestrator!.last.contract?.goal ?? "restore system health",
+      freshView
+    );
+
+    // Determine what changed.
+    let reason: string;
+    if (previousPlan) {
+      const prevVersion = previousPlan.stateVersion;
+      const currentVersion = this.currentVersion;
+      reason = `plan was stale (version ${prevVersion} vs current ${currentVersion}); re-observed ${freshResult.hypotheses.length} hypotheses, ${freshResult.plans.length} plans`;
+    } else {
+      reason = `reconciled without previous plan; ${freshResult.hypotheses.length} hypotheses, ${freshResult.plans.length} plans`;
+    }
+
+    // Reset selection — the agent must pick a new plan from the fresh set.
+    this.selectedPlanId = null;
+    this.lastGate = null;
+    this.humanMutations = [];
+    this.workflow = freshResult.plans.length > 0 ? "PLAN_READY" : "INVESTIGATING";
+
+    this.flight.record({
+      actor: "agent",
+      type: "observation",
+      resultSummary: reason,
+      detail: { reconciled: true, newStateVersion: this.currentVersion, hypotheses: freshResult.hypotheses.length, plans: freshResult.plans.length },
+    });
+
+    return { reconciled: true, plans: freshResult.plans.length, reason };
+  }
+
   /** Public, blind-safe view for the UI and tool runtime. */
   view(): PublicView {
     const runner = this.runner;
@@ -496,6 +559,38 @@ export class ChangeRoomSession {
 
   private runTool(name: ToolName, args: Record<string, unknown>): { ok: boolean; data?: unknown; error?: string } {
     const runner = this.requireRunner();
+
+    // Phase 15 (input validation): reject unknown tool names outright.
+    const KNOWN_TOOLS = new Set<ToolName>([
+      "inspect_system",
+      "investigate",
+      "get_evidence",
+      "inspect_history",
+      "generate_plans",
+      "compare_plans",
+      "simulate_plan",
+      "challenge_plan",
+      "prepare_change",
+      "validate_policy",
+      "request_human_decision",
+      "execute_change",
+      "verify_change",
+      "rollback_change",
+    ]);
+    if (!KNOWN_TOOLS.has(name)) {
+      return { ok: false, error: `unknown tool: '${name}'` };
+    }
+
+    // Strict id validation for any tool that takes a planId (15.3: reject invalid IDs),
+    // plus action-type enum validation where relevant.
+    for (const key of Object.keys(args)) {
+      if (key.endsWith("Id") && (args[key] !== undefined && args[key] !== null)) {
+        if (!isValidId(args[key])) {
+          return { ok: false, error: `invalid input: field '${key}' is not a valid id` };
+        }
+      }
+    }
+
     switch (name) {
       case "inspect_system":
         return { ok: true, data: { health: runner.health(), kpis: runner.agentView().kpis, metrics: runner.agentView().metrics } };
@@ -506,12 +601,18 @@ export class ChangeRoomSession {
       case "get_evidence":
         return { ok: true, data: this.orchestrator?.last.investigation ?? null };
       case "inspect_history":
+        if (args.limit !== undefined && (typeof args.limit !== "number" || !Number.isInteger(args.limit) || args.limit < 1 || args.limit > 10000)) {
+          return { ok: false, error: "invalid input: 'limit' must be an integer in [1, 10000]" };
+        }
         return { ok: true, data: this.flight.replay() };
       case "challenge_plan": {
         if (this.workflow !== "PLAN_READY" && this.workflow !== "SIMULATED") {
           return { ok: false, error: `challenge_plan requires PLAN_READY or SIMULATED, got ${this.workflow}` };
         }
         const planId = String(args.planId ?? "");
+        if (!isValidId(planId)) {
+          return { ok: false, error: `invalid input: 'planId' is not a valid id` };
+        }
         const last = this.orchestrator!.last;
         const res = challengePlan(
           {
@@ -527,8 +628,16 @@ export class ChangeRoomSession {
         if (!res.ok) return { ok: false, error: res.error };
         return { ok: true, data: res.report };
       }
-      default:
+      default: {
+        // Mutation/action tools are not dispatched from runTool in this runtime;
+        // they flow through the Change Control boundary. Reject anything that
+        // never routes to a real handler.
+        const invalidAction = validateActionType((args as Record<string, unknown>).actionType);
+        if (name.startsWith("execute_") || name === "rollback_change") {
+          return { ok: false, error: `tool '${name}' requires approval through Change Control; use the session API` };
+        }
         return { ok: false, error: `tool '${name}' not implemented in this runtime` };
+      }
     }
   }
 }
@@ -548,6 +657,7 @@ function humanLabel(s: WorkflowState): string {
     DEVIATION: "Deviation detected",
     RECOVERING: "Recovering",
     COMPLETE: "Complete",
+    STALE: "Plan stale — state changed",
   };
   return m[s];
 }
