@@ -350,6 +350,37 @@ importers:
         specifier: ^5.1.0
         version: 5.9.3
 
+  packages/failure-injection:
+    dependencies:
+      '@change-room/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@change-room/control':
+        specifier: workspace:*
+        version: link:../control
+      '@change-room/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@change-room/flight-recorder':
+        specifier: workspace:*
+        version: link:../flight-recorder
+      '@change-room/scenarios':
+        specifier: workspace:*
+        version: link:../scenarios
+      '@change-room/simulator':
+        specifier: workspace:*
+        version: link:../simulator
+      '@change-room/verification':
+        specifier: workspace:*
+        version: link:../verification
+    devDependencies:
+      '@types/node':
+        specifier: ^17.0.21
+        version: 17.0.21
+      typescript:
+        specifier: ^5.1.0
+        version: 5.9.3
+
   packages/flight-recorder:
     dependencies:
       '@change-room/domain':
