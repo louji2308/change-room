@@ -278,5 +278,5 @@ All criteria: commerce integration, agent reasoning, challenge mode, concurrency
 
 ---
 
-> **Note on repo state:** Phases 0–16, 18, 19, 20, and 22 are implemented and green (185+ tests across 13 packages;
+> **Note on repo state:** Phases 0–16, 18, 19, 20, and 22 are implemented and green (201 tests across 11 package suites;
 > `apps/change-room` builds and typechecks). Phases 17, 21, 23–25 in progress. This tracker is maintained as phases are verified.
