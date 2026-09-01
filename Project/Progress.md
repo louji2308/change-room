@@ -274,9 +274,17 @@ One flawless end-to-end demo: cache degradation → investigation → hypotheses
 
 Clean-browser end-to-end test: open app → Change Room → start scenario → agent discovers tools → investigates → plans → simulation → approval → execution → verification → recovery → replay. See `Implementation.md` lines 2743–2763.
 
-### PHASE 24 — Chrome DevTools MCP Final Audit — ⏳ PENDING
+### PHASE 24 — Chrome DevTools MCP Final Audit — 🔄 IN PROGRESS
 
 Full DevTools audit: console errors, network failures/CORS, WebMCP tool surface, application state, UI quality. See `Implementation.md` lines 2766–2836.
+
+- [x] Console: no JS errors/warnings/hydration/WebMCP errors; clean Fast Refresh; one a11y warning identified (see UI)
+- [x] Network: all `/` + `/api/session` requests 200; **`/favicon.ico` 404** (fixed); no CORS failures, no slow/unexpected requests, no leaked data
+- [x] WebMCP surface: 14 tools (12 read-only, 2 mutating) with names, descriptions and schemas verified; live `/api/tools` lifecycle audit (start → investigate → plans → simulate → prepare → validate → approve → execute → verify → COMPLETE) passes; state gating correct in IDLE (all tools 422), unknown tool 400, non-approved `execute_change` 422, post-COMPLETE `rollback_change` 422
+- [x] Application state: server-side in-memory session; **no localStorage/cookies/sessionStorage/indexedDB** anywhere in the app (no client leak surface); state transitions + flight events verified via `/api/session`
+- [x] UI: full page renders with all 11 regions (stepper, controls, system/incident/evidence/hypotheses/simulation/plans/control/verification/delegation/flight-recorder); one a11y finding — **form fields missing `id`/`name` (scenario select, risk-ceiling select, delegation-duration input, reversible-only checkbox) — fixed** (added `id`+`name`+`htmlFor`)
+- [x] Fixes applied: `src/app/icon.svg` added (favicon 404), form-field `id`/`name`/`htmlFor` on all 4 controls; typecheck + full `pnpm test` (21/21) + `next build` green
+- [ ] Final re-verification in browser (console + tab a11y + visual) awaiting chrome-devtools MCP reconnect in this session
 
 ### PHASE 25 — Final Acceptance Test — ⏳ PENDING
 

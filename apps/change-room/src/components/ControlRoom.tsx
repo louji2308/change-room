@@ -137,22 +137,30 @@ export default function ControlRoom() {
 
   if (!view) {
     return (
-      <div style={{ padding: "1rem", maxWidth: 1200, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
-          <h1>Change Room</h1>
+      <div className="app-shell">
+        <div className="app-inner">
+          <div className="topbar">
+            <div className="brand-row">
+              <div className="logo-mark">CR</div>
+              <div>
+                <h1>Change Room</h1>
+                <div className="subtitle">shared human + AI operational control</div>
+              </div>
+            </div>
+          </div>
+          {error ? (
+            <div role="alert" className="alert alert-error">
+              <span className="alert-icon" aria-hidden="true">!</span>
+              <span>Error loading session: {error}</span>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: "1rem" }} role="status" aria-label="Loading Change Room">
+              <div className="skeleton" />
+              <div className="skeleton" />
+              <div className="skeleton" />
+            </div>
+          )}
         </div>
-        {error ? (
-          <div role="alert" className="alert alert-error">
-            <span className="alert-icon" aria-hidden="true">!</span>
-            <span>Error loading session: {error}</span>
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: "0.75rem" }} role="status" aria-label="Loading Change Room">
-            <div className="skeleton" />
-            <div className="skeleton" />
-            <div className="skeleton" />
-          </div>
-        )}
       </div>
     );
   }
@@ -177,90 +185,98 @@ export default function ControlRoom() {
   const isActive = ACTIVE_STATES.has(view.workflow);
 
   return (
-    <div style={{ padding: "1rem", maxWidth: 1280, margin: "0 auto" }}>
-      <header className={`spread${isActive ? " header-active" : ""}`} style={{ marginBottom: "0.5rem" }}>
-        <div className="row" style={{ gap: "0.75rem" }}>
-          <h1>Change Room</h1>
-          <span className="badge" role="status" aria-label={`Workflow status: ${view.workflow}`}>
-            <span className={`dot ${view.paused ? "dot-warn" : ERROR_STATES.has(view.workflow) ? "dot-danger" : view.workflow === "COMPLETE" ? "dot-ok" : "dot-info"}`} />
-            {view.paused ? "PAUSED — " : ""}
-            {view.statusLabel} ({view.workflow})
-          </span>
-        </div>
-        <span className="text-faint mono" style={{ fontSize: 12 }}>
-          shared human + AI operational control
-        </span>
-      </header>
-
-      <WorkflowStepper workflow={view.workflow} />
-
-      <div aria-live="polite" aria-atomic="true" style={{ minHeight: 0 }}>
-        {error && (
-          <div
-            role="alert"
-            className="alert alert-error"
-            style={{ marginTop: "var(--sp-3)", marginBottom: "var(--sp-3)" }}
-          >
-            <span className="alert-icon" aria-hidden="true">!</span>
-            <span>{error}</span>
+    <div className="app-shell">
+      <div className="app-inner">
+        {/* ── Top bar ── */}
+        <header className={`topbar${isActive ? " header-active" : ""}`}>
+          <div className="brand-row">
+            <div className="logo-mark">CR</div>
+            <div>
+              <h1>Change Room</h1>
+              <div className="subtitle">shared human + AI operational control</div>
+            </div>
           </div>
-        )}
-
-        {flash && (
-          <div
-            role="status"
-            className="alert alert-flash"
-            style={{ marginTop: "var(--sp-3)", marginBottom: "var(--sp-3)" }}
-          >
-            <span className="alert-icon" aria-hidden="true">&#10003;</span>
-            <span>{flash}</span>
+          <div className="row" style={{ gap: "0.5rem" }}>
+            <span className="badge lilac" role="status" aria-label={`Workflow status: ${view.workflow}`}>
+              <span className={`dot ${view.paused ? "dot-warn" : ERROR_STATES.has(view.workflow) ? "dot-danger" : view.workflow === "COMPLETE" ? "dot-ok" : "dot-info"}`} />
+              {view.paused ? "PAUSED — " : ""}
+              {view.statusLabel} ({view.workflow})
+            </span>
           </div>
-        )}
-      </div>
+        </header>
 
-      <div className="statusbar" style={{ margin: "var(--sp-3) 0" }}>
-        <span className="text-dim" style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-          Controls
-        </span>
-        {start}
-        <span className="rail">
-          {available.map((a) => (
-            <button
-              key={a.id}
-              className={`button${a.danger ? " button-danger" : ""}${a.id === "approve" ? " button-primary" : ""}`}
-              disabled={isBusy}
-              onClick={() => run(a.id, a.body?.(view))}
-              aria-busy={busy === a.id || undefined}
+        {/* ── Workflow stepper ── */}
+        <WorkflowStepper workflow={view.workflow} />
+
+        {/* ── Alerts ── */}
+        <div aria-live="polite" aria-atomic="true" style={{ minHeight: 0 }}>
+          {error && (
+            <div
+              role="alert"
+              className="alert alert-error"
+              style={{ marginTop: "var(--sp-3)", marginBottom: "var(--sp-3)" }}
             >
-              {busy === a.id ? <><span className="spinner" aria-hidden="true" />Working…</> : a.label}
-            </button>
-          ))}
-        </span>
-        {isBusy && (
-          <span className="busy-indicator" role="status" aria-live="polite">
-            <span className="spinner" aria-hidden="true" />
-            Executing {busy}…
-          </span>
-        )}
-      </div>
+              <span className="alert-icon" aria-hidden="true">!</span>
+              <span>{error}</span>
+            </div>
+          )}
 
-      <div className="stack" style={{ marginTop: "var(--sp-2)" }}>
-        <SystemPanel view={view} />
-        <div className="grid-2">
-          <IncidentPanel view={view} />
-          <EvidencePanel view={view} />
+          {flash && (
+            <div
+              role="status"
+              className="alert alert-flash"
+              style={{ marginTop: "var(--sp-3)", marginBottom: "var(--sp-3)" }}
+            >
+              <span className="alert-icon" aria-hidden="true">&#10003;</span>
+              <span>{flash}</span>
+            </div>
+          )}
         </div>
-        <div className="grid-2">
-          <HypothesesPanel view={view} />
-          <SimulationPanel view={view} />
+
+        {/* ── Controls bar ── */}
+        <div className="statusbar" style={{ margin: "var(--sp-4) 0" }}>
+          <span className="controls-label">Controls</span>
+          {start}
+          <span className="rail">
+            {available.map((a) => (
+              <button
+                key={a.id}
+                className={`button${a.danger ? " button-danger" : ""}${a.id === "approve" ? " button-primary" : ""}`}
+                disabled={isBusy}
+                onClick={() => run(a.id, a.body?.(view))}
+                aria-busy={busy === a.id || undefined}
+              >
+                {busy === a.id ? <><span className="spinner" aria-hidden="true" />Working…</> : a.label}
+              </button>
+            ))}
+          </span>
+          {isBusy && (
+            <span className="busy-indicator" role="status" aria-live="polite">
+              <span className="spinner" aria-hidden="true" />
+              Executing {busy}…
+            </span>
+          )}
         </div>
-        <PlansPanel view={view} />
-        <div className="grid-2">
-          <ApprovalPanel view={view} />
-          <VerificationPanel view={view} />
+
+        {/* ── Panels ── */}
+        <div className="stack" style={{ marginTop: "var(--sp-2)" }}>
+          <SystemPanel view={view} />
+          <div className="grid-2">
+            <IncidentPanel view={view} />
+            <EvidencePanel view={view} />
+          </div>
+          <div className="grid-2">
+            <HypothesesPanel view={view} />
+            <SimulationPanel view={view} />
+          </div>
+          <PlansPanel view={view} />
+          <div className="grid-2">
+            <ApprovalPanel view={view} />
+            <VerificationPanel view={view} />
+          </div>
+          <DelegationPanel view={view} />
+          <TimelinePanel view={view} />
         </div>
-        <DelegationPanel view={view} />
-        <TimelinePanel view={view} />
       </div>
     </div>
   );

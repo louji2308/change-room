@@ -13,33 +13,33 @@ export function SystemPanel({ view }: { view: View }) {
   const k = view.kpis ?? {};
   const metrics = view.metrics ?? [];
   return (
-    <section className="panel" aria-label="System overview">
+    <section className="panel lilac" aria-label="System overview">
       <h3>System</h3>
-      <div className="spread" style={{ marginBottom: "0.75rem" }}>
-        <span className="row" style={{ fontSize: "1.25rem" }}>
+      <div className="spread" style={{ marginBottom: "1rem" }}>
+        <span className="row" style={{ fontSize: "1.35rem", fontWeight: 800, letterSpacing: "-0.02em" }}>
           <HealthDot health={view.health} />
           <strong>{view.health}</strong>
         </span>
-        <span className="badge">
+        <span className="badge blue">
           <span className={`dot ${view.blind ? "dot-info" : "dot-dim"}`} />
           blind agent view {view.blind ? "ON" : "OFF"}
         </span>
       </div>
-      <dl className="kv" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", marginBottom: "0.75rem" }}>
+      <dl className="kv" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", marginBottom: "1rem" }}>
         <dd>
           <span className="text-faint">checkout</span>
-          <div style={{ fontSize: "1.05rem", fontWeight: 600 }}>
+          <div style={{ fontSize: "1.15rem", fontWeight: 700, marginTop: "0.2rem" }}>
             {fmt(k.checkoutLatencyMs, "ms")}{" "}
             <span className={`text-${healthTone(Number(k.checkoutErrorRate))}`}>{fmt(k.checkoutErrorRate, "%")} err</span>
           </div>
         </dd>
         <dd>
           <span className="text-faint">throughput</span>
-          <div style={{ fontSize: "1.05rem", fontWeight: 600 }}>{fmt(k.ordersThroughputPerSec, "/s")}</div>
+          <div style={{ fontSize: "1.15rem", fontWeight: 700, marginTop: "0.2rem" }}>{fmt(k.ordersThroughputPerSec, "/s")}</div>
         </dd>
         <dd>
           <span className="text-faint">cache hit</span>
-          <div style={{ fontSize: "1.05rem", fontWeight: 600 }}>{fmt(k.cacheHitRateEstimate, "%")}</div>
+          <div style={{ fontSize: "1.15rem", fontWeight: 700, marginTop: "0.2rem" }}>{fmt(k.cacheHitRateEstimate, "%")}</div>
         </dd>
       </dl>
       {metrics.length === 0 ? (
@@ -62,7 +62,7 @@ export function SystemPanel({ view }: { view: View }) {
                   <td>
                     <span className="row">
                       <span className={`dot ${m.degraded ? "dot-warn" : "dot-ok"}`} />
-                      {m.componentId}
+                      <strong>{m.componentId}</strong>
                     </span>
                   </td>
                   <td>
@@ -73,7 +73,7 @@ export function SystemPanel({ view }: { view: View }) {
                           style={{ width: `${Math.min(100, Number(m.utilization))}%`, background: barColor(m.utilization) }}
                         />
                       </span>
-                      {Math.round(Number(m.utilization))}%
+                      <span style={{ fontWeight: 600 }}>{Math.round(Number(m.utilization))}%</span>
                     </span>
                   </td>
                   <td>{fmt(m.latencyMs, "ms")}</td>
@@ -93,7 +93,7 @@ export function SystemPanel({ view }: { view: View }) {
 export function IncidentPanel({ view }: { view: View }) {
   const hyp = view.topHypothesis;
   return (
-    <section className="panel" aria-label="Incident">
+    <section className="panel red" aria-label="Incident">
       <h3>Incident</h3>
       <dl className="kv">
         <dt>Status</dt>
@@ -109,7 +109,7 @@ export function IncidentPanel({ view }: { view: View }) {
         <dt>Lead hypothesis</dt>
         <dd>{hyp ? hyp.cause : "none yet"}</dd>
         <dt>Assurance</dt>
-        <dd>{hyp ? `${Math.round((hyp.confidence ?? 0) * 100)}%` : "—"}</dd>
+        <dd className="text-peach">{hyp ? `${Math.round((hyp.confidence ?? 0) * 100)}%` : "—"}</dd>
       </dl>
     </section>
   );
@@ -120,7 +120,7 @@ export function EvidencePanel({ view }: { view: View }) {
   const inv: any = view.investigation;
   const evidence: any[] = inv?.evidence ?? [];
   return (
-    <section className="panel" aria-label="Evidence">
+    <section className="panel blue" aria-label="Evidence">
       <h3>Evidence</h3>
       {evidence.length === 0 ? (
         <div className="empty">No evidence collected. Run the agent&apos;s investigation to gather structured signals.</div>
@@ -141,7 +141,13 @@ export function EvidencePanel({ view }: { view: View }) {
                   <td className="mono">{e.metric ?? e.componentId}</td>
                   <td>{e.value != null ? String(e.value) : "—"}</td>
                   <td className="text-dim">{e.source ?? "—"}</td>
-                  <td>{e.relevance != null ? `${Math.round(Number(e.relevance) * 100)}%` : "—"}</td>
+                  <td>
+                    {e.relevance != null ? (
+                      <span className="badge blue">{Math.round(Number(e.relevance) * 100)}%</span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -156,25 +162,25 @@ export function EvidencePanel({ view }: { view: View }) {
 export function HypothesesPanel({ view }: { view: View }) {
   const hyps: any[] = view.hypotheses ?? [];
   return (
-    <section className="panel" aria-label="Hypotheses">
+    <section className="panel orange" aria-label="Hypotheses">
       <h3>Hypotheses</h3>
       {hyps.length === 0 ? (
         <div className="empty">No hypotheses yet.</div>
       ) : (
-        <ol style={{ margin: 0, paddingLeft: "1.1rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+        <ol style={{ margin: 0, paddingLeft: "1.2rem", display: "flex", flexDirection: "column", gap: "0.85rem" }}>
           {hyps.map((h, i) => {
             const isTop = i === 0 && h.id === view.topHypothesis?.id;
             return (
               <li key={h.id ?? i}>
-                <div className="spread" style={{ alignItems: "baseline" }}>
+                <div className="spread" style={{ alignItems: "center" }}>
                   <span className="row">
                     <span className={`dot ${isTop ? "dot-warn" : "dot-dim"}`} />
                     <strong>{h.cause ?? h.title ?? "hypothesis"}</strong>
                   </span>
-                  <span className="badge">{(h.confidence ?? 0) * 100}%</span>
+                  <span className="badge orange">{(h.confidence ?? 0) * 100}%</span>
                 </div>
                 {(h.supporting?.length ?? 0) > 0 && (
-                  <div className="text-dim" style={{ marginTop: "0.25rem", fontSize: "12.5px" }}>
+                  <div className="text-dim" style={{ marginTop: "0.4rem", fontSize: "12.5px" }}>
                     supports: {h.supporting.map((s: any) => s.metric ?? s).join(", ")}
                   </div>
                 )}
@@ -192,7 +198,7 @@ export function PlansPanel({ view }: { view: View }) {
   const plans: any[] = view.plans ?? [];
   const selectedId = view.selectedPlanId;
   return (
-    <section className="panel" aria-label="Plans">
+    <section className="panel green" aria-label="Plans">
       <h3>Plans</h3>
       {plans.length === 0 ? (
         <div className="empty">No plans generated. Run the agent&apos;s reasoning to produce candidate remediations.</div>
@@ -212,24 +218,30 @@ export function PlansPanel({ view }: { view: View }) {
             </thead>
             <tbody>
               {plans.map((p) => (
-                <tr key={p.id} style={p.id === selectedId ? { background: "rgba(108,192,255,0.06)" } : undefined}>
+                <tr key={p.id} style={p.id === selectedId ? { background: "var(--green-soft)" } : undefined}>
                   <td>
                     <strong>{p.name}</strong>
-                    <div className="text-faint mono" style={{ fontSize: 11 }}>
+                    <div className="text-faint mono" style={{ fontSize: 11, marginTop: "0.2rem" }}>
                       {p.objective}
                     </div>
                   </td>
                   <td className="mono">{p.actions?.map((a: any) => a.type).join(", ") || "—"}</td>
                   <td>
-                    <span className={`badge text-${riskTone(p.risk?.overall)}`}>{p.risk?.overall ?? "—"}</span>
+                    <span className={`badge ${riskTone(p.risk?.overall)}`}>{p.risk?.overall ?? "—"}</span>
                   </td>
                   <td className="text-dim" style={{ fontSize: 12 }}>
                     {p.reversibility}
                   </td>
                   <td className="text-dim">{p.blastRadius}</td>
-                  <td>{Math.round((p.confidence ?? 0) * 100)}%</td>
                   <td>
-                    {p.id === selectedId ? <span className="badge">selected</span> : <span className="text-faint">—</span>}
+                    <span className="badge green">{Math.round((p.confidence ?? 0) * 100)}%</span>
+                  </td>
+                  <td>
+                    {p.id === selectedId ? (
+                      <span className="badge lilac">selected</span>
+                    ) : (
+                      <span className="text-faint">—</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -245,7 +257,7 @@ export function PlansPanel({ view }: { view: View }) {
 export function SimulationPanel({ view }: { view: View }) {
   const sims: any[] = view.simulations ?? [];
   return (
-    <section className="panel" aria-label="Simulation">
+    <section className="panel teal" aria-label="Simulation">
       <h3>Simulation (predicted)</h3>
       {sims.length === 0 ? (
         <div className="empty">No simulated branches yet.</div>
@@ -270,7 +282,13 @@ export function SimulationPanel({ view }: { view: View }) {
                     {s.predictedKpis?.checkoutLatencyMs != null ? `${s.predictedKpis.checkoutLatencyMs} ms` : "—"}
                   </td>
                   <td>{String(s.prediction?.kpis?.systemHealth ?? "—")}</td>
-                  <td>{s.error ? <span className="text-danger">error</span> : "✓"}</td>
+                  <td>
+                    {s.error ? (
+                      <span className="text-danger">error</span>
+                    ) : (
+                      <span className="badge green">✓</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -281,8 +299,8 @@ export function SimulationPanel({ view }: { view: View }) {
   );
 }
 
-function riskTone(r?: string) {
-  return r === "high" ? "danger" : r === "medium" ? "warn" : "ok";
+function riskTone(r?: string): string {
+  return r === "high" ? "red" : r === "medium" ? "yellow" : "green";
 }
 
 function healthTone(v: number): "ok" | "danger" {
@@ -291,9 +309,9 @@ function healthTone(v: number): "ok" | "danger" {
 
 function barColor(v: unknown): string {
   const n = Number(v);
-  if (n >= 90) return "var(--danger)";
-  if (n >= 70) return "var(--warn)";
-  return "var(--ok)";
+  if (n >= 90) return "var(--red)";
+  if (n >= 70) return "var(--yellow)";
+  return "var(--green)";
 }
 
 function fmt(v: unknown, unit?: string): string {

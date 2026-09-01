@@ -10,7 +10,7 @@ export function ApprovalPanel({ view }: { view: View }) {
   const phase = view.phase;
   const selected = view.plans?.find((p: any) => p.id === view.selectedPlanId);
   return (
-    <section className="panel" aria-label="Approval and change control">
+    <section className="panel peach" aria-label="Approval and change control">
       <h3>Change Control</h3>
       {!g ? (
         <div className="empty">Select a plan and prepare the change to evaluate it through the control gate.</div>
@@ -20,7 +20,7 @@ export function ApprovalPanel({ view }: { view: View }) {
           <dd className="mono">{g.stage}</dd>
           <dt>Allowed</dt>
           <dd>
-            <span className={`badge ${g.allowed ? "badge" : ""}`}>
+            <span className={`badge ${g.allowed ? "green" : "red"}`}>
               <span className={`dot ${g.allowed ? "dot-ok" : "dot-danger"}`} />
               {g.allowed ? "allowed" : "blocked"}
             </span>
@@ -34,9 +34,9 @@ export function ApprovalPanel({ view }: { view: View }) {
         </dl>
       )}
       {phase.name === "awaiting" && (
-        <div className="row" style={{ marginTop: "0.75rem" }}>
+        <div className="row" style={{ marginTop: "1rem", padding: "0.75rem 1rem", background: "var(--yellow-soft)", borderRadius: "var(--r-sm)", border: "1px solid var(--yellow)" }}>
           <span className="dot dot-warn" />
-          <span>Change is waiting for human approval — use the controls below.</span>
+          <span style={{ color: "var(--yellow)" }}>Change is waiting for human approval — use the controls below.</span>
         </div>
       )}
       {selected && (
@@ -54,13 +54,13 @@ export function VerificationPanel({ view }: { view: View }) {
   const comparisons: any[] = v?.comparisons ?? [];
   const active = comparisons[0];
   return (
-    <section className="panel" aria-label="Verification">
+    <section className="panel lilac" aria-label="Verification">
       <h3>Prediction vs Reality</h3>
       {!active ? (
         <div className="empty">No verification yet — execute a change to compare prediction against outcome.</div>
       ) : (
         <>
-          <div className="spread" style={{ marginBottom: "0.5rem" }}>
+          <div className="spread" style={{ marginBottom: "0.75rem", alignItems: "baseline" }}>
             <span className={`row text-xl text-${verdictTone(active.verdict)}`}>{active.verdict}</span>
             <span className="text-dim mono">{active.summary}</span>
           </div>
@@ -101,10 +101,10 @@ export function TimelinePanel({ view }: { view: View }) {
   const byType: Record<string, number> = flight?.byType ?? {};
   const replay: any[] = flight?.events ?? [];
   return (
-    <section className="panel" aria-label="Flight recorder">
+    <section className="panel yellow" aria-label="Flight recorder">
       <h3>Flight Recorder</h3>
-      <div className="chips" style={{ marginBottom: "0.75rem" }}>
-        <span className="badge">{count} events</span>
+      <div className="chips" style={{ marginBottom: "1rem" }}>
+        <span className="badge lilac">{count} events</span>
         {Object.entries(byType)
           .slice(0, 6)
           .map(([k, n]) => (
@@ -116,21 +116,22 @@ export function TimelinePanel({ view }: { view: View }) {
       {replay.length === 0 ? (
         <div className="empty">No recorded events yet — every workflow step is recorded here.</div>
       ) : (
-        <div className="mono" style={{ maxHeight: 340, overflow: "auto" }}>
+        <div className="mono" style={{ maxHeight: 360, overflow: "auto", padding: "0 0.25rem" }}>
           {replay.map((e, i) => (
             <div
               key={i}
               style={{
                 display: "flex",
-                gap: "0.5rem",
-                padding: "0.2rem 0",
+                alignItems: "baseline",
+                gap: "0.75rem",
+                padding: "0.45rem 0",
                 borderBottom: "1px solid var(--border)",
-                fontSize: 12,
+                fontSize: 12.5,
               }}
             >
-              <span className="text-faint">#{e.seq}</span>
-              <span className="text-info">{e.actor}</span>
-              <span className="text-warn">{e.type}</span>
+              <span className="text-faint" style={{ minWidth: 36 }}>#{e.seq}</span>
+              <span className="text-info" style={{ minWidth: 70 }}>{e.actor}</span>
+              <span className="text-warn" style={{ minWidth: 90 }}>{e.type}</span>
               <span className="text-dim" style={{ flex: 1 }}>
                 {e.resultSummary ?? ""}
               </span>
@@ -162,16 +163,16 @@ export function DelegationPanel({ view }: { view: View }) {
 
   const d: any = view.delegation;
   return (
-    <section className="panel" aria-label="Delegation and human takeover">
+    <section className="panel pink" aria-label="Delegation and human takeover">
       <h3>Delegation &amp; Takeover</h3>
 
-      <div className="chips" style={{ marginBottom: "0.75rem" }}>
-        <span className="badge">
+      <div className="chips" style={{ marginBottom: "1rem" }}>
+        <span className={`badge ${view.paused ? "yellow" : "green"}`}>
           <span className={`dot ${view.paused ? "dot-warn" : "dot-ok"}`} />
           {view.paused ? "AGENT PAUSED" : "agent active"}
         </span>
-        <span className="badge">state v{view.stateVersion}</span>
-        <span className="badge">{d ? `delegated: ${d.riskCeiling} / ${d.scope?.length ?? 0} resources` : "no delegation"}</span>
+        <span className="badge blue">state v{view.stateVersion}</span>
+        <span className="badge teal">{d ? `delegated: ${d.riskCeiling} / ${d.scope?.length ?? 0} resources` : "no delegation"}</span>
       </div>
 
       {d && (
@@ -189,18 +190,18 @@ export function DelegationPanel({ view }: { view: View }) {
         </dl>
       )}
 
-      <div className="stack" style={{ marginTop: "0.75rem" }}>
-        <div className="row" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
-          <label className="row" style={{ gap: "0.35rem" }}>
-            ceiling
+      <div className="stack" style={{ marginTop: "1rem" }}>
+        <div className="row" style={{ gap: "0.75rem", flexWrap: "wrap" }}>
+          <label className="row" style={{ gap: "0.4rem" }}>
+            <span className="text-faint" style={{ fontSize: 12 }}>ceiling</span>
             <select className="button" value={ceiling} onChange={(e) => setCeiling(e.target.value)} aria-label="Risk ceiling">
               <option value="low">low</option>
               <option value="medium">medium</option>
               <option value="high">high</option>
             </select>
           </label>
-          <label className="row" style={{ gap: "0.35rem" }}>
-            duration (ms)
+          <label className="row" style={{ gap: "0.4rem" }}>
+            <span className="text-faint" style={{ fontSize: 12 }}>duration (ms)</span>
             <input
               className="button"
               style={{ width: 96 }}
@@ -210,12 +211,12 @@ export function DelegationPanel({ view }: { view: View }) {
               aria-label="Delegation duration milliseconds"
             />
           </label>
-          <label className="row" style={{ gap: "0.35rem" }}>
+          <label className="row" style={{ gap: "0.4rem" }}>
             <input type="checkbox" checked={reversibleOnly} onChange={(e) => setReversibleOnly(e.target.checked)} />
-            reversible only
+            <span style={{ fontSize: 13 }}>reversible only</span>
           </label>
         </div>
-        <div className="row" style={{ gap: "0.5rem" }}>
+        <div className="row" style={{ gap: "0.75rem" }}>
           <button
             className="button"
             disabled={busy !== null}
@@ -237,7 +238,7 @@ export function DelegationPanel({ view }: { view: View }) {
             </button>
           )}
         </div>
-        <div className="row" style={{ gap: "0.5rem", marginTop: "0.25rem" }}>
+        <div className="row" style={{ gap: "0.75rem", marginTop: "0.25rem" }}>
           <button className="button button-danger" disabled={busy !== null} onClick={() => run("takeover", { actionType: "restore_configuration", note: "human applied restore_configuration manually" })} aria-busy={busy === "takeover" || undefined}>
             {busy === "takeover" ? <><span className="spinner" aria-hidden="true" />Working…</> : "Human takeover (restore config)"}
           </button>
@@ -248,13 +249,13 @@ export function DelegationPanel({ view }: { view: View }) {
       </div>
 
       {msg && (
-        <div role="status" className="alert alert-flash" style={{ marginTop: "0.5rem" }}>
+        <div role="status" className="alert alert-flash" style={{ marginTop: "0.75rem" }}>
           <span className="alert-icon" aria-hidden="true">&#10003;</span>
           <span className="mono" style={{ fontSize: 12 }}>{msg}</span>
         </div>
       )}
       {view.humanMutations?.length > 0 && (
-        <div role="alert" className="alert alert-error" style={{ marginTop: "0.5rem" }}>
+        <div role="alert" className="alert alert-error" style={{ marginTop: "0.75rem" }}>
           <span className="alert-icon" aria-hidden="true">!</span>
           <span className="mono" style={{ fontSize: 12 }}>
             {view.humanMutations.length} human mutation(s) recorded — current plans may be stale.
@@ -271,6 +272,6 @@ function num(v: unknown): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
-function verdictTone(v?: string) {
+function verdictTone(v?: string): string {
   return v === "HEALTHY" ? "ok" : v === "REGRESSION" ? "danger" : v === "DEGRADED" ? "warn" : "dim";
 }
