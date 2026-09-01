@@ -1,17 +1,15 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import WebMCP from "@/components/WebMCP";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
+const inter = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
+const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
 export const metadata: Metadata = {
   title: "Change Room",
-  description: "Shared human + AI operational control room for the Medusa e-commerce sandbox.",
+  description:
+    "Where humans and AI decide change together. A shared human + AI operational control room for the Medusa e-commerce sandbox.",
 };
 
 export const viewport: Viewport = {
@@ -23,7 +21,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={`${inter.variable} ${jetbrains.variable}`}>
         <WebMCP />
         {children}
       </body>

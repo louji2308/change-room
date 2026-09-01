@@ -137,17 +137,17 @@ export default function ControlRoom() {
 
   if (!view) {
     return (
-      <div className="app-shell">
-        <div className="app-inner">
-          <div className="topbar">
-            <div className="brand-row">
-              <div className="logo-mark">CR</div>
-              <div>
-                <h1>Change Room</h1>
-                <div className="subtitle">shared human + AI operational control</div>
-              </div>
+      <div className="app-shell" id="control-room">
+        <header className="topbar">
+          <div className="brand-row">
+            <div className="logo-mark">CR</div>
+            <div>
+              <h2 className="brand-title">Change Room</h2>
+              <div className="subtitle">shared human + AI operational control</div>
             </div>
           </div>
+        </header>
+        <div className="app-inner">
           {error ? (
             <div role="alert" className="alert alert-error">
               <span className="alert-icon" aria-hidden="true">!</span>
@@ -185,26 +185,26 @@ export default function ControlRoom() {
   const isActive = ACTIVE_STATES.has(view.workflow);
 
   return (
-    <div className="app-shell">
-      <div className="app-inner">
-        {/* ── Top bar ── */}
-        <header className={`topbar${isActive ? " header-active" : ""}`}>
-          <div className="brand-row">
-            <div className="logo-mark">CR</div>
-            <div>
-              <h1>Change Room</h1>
-              <div className="subtitle">shared human + AI operational control</div>
-            </div>
+    <div className="app-shell" id="control-room">
+      {/* ── Top bar ── */}
+      <header className={`topbar${isActive ? " header-active" : ""}`}>
+        <div className="brand-row">
+          <div className="logo-mark">CR</div>
+          <div>
+            <h2 className="brand-title">Change Room</h2>
+            <div className="subtitle">shared human + AI operational control</div>
           </div>
-          <div className="row" style={{ gap: "0.5rem" }}>
-            <span className="badge lilac" role="status" aria-label={`Workflow status: ${view.workflow}`}>
-              <span className={`dot ${view.paused ? "dot-warn" : ERROR_STATES.has(view.workflow) ? "dot-danger" : view.workflow === "COMPLETE" ? "dot-ok" : "dot-info"}`} />
-              {view.paused ? "PAUSED — " : ""}
-              {view.statusLabel} ({view.workflow})
-            </span>
-          </div>
-        </header>
+        </div>
+        <div className="row" style={{ gap: "0.5rem" }}>
+          <span className="badge lilac" role="status" aria-label={`Workflow status: ${view.workflow}`}>
+            <span className={`dot ${view.paused ? "dot-warn" : ERROR_STATES.has(view.workflow) ? "dot-danger" : view.workflow === "COMPLETE" ? "dot-ok" : "dot-info"}`} />
+            {view.paused ? "PAUSED — " : ""}
+            {view.statusLabel} ({view.workflow})
+          </span>
+        </div>
+      </header>
 
+      <div className="app-inner">
         {/* ── Workflow stepper ── */}
         <WorkflowStepper workflow={view.workflow} />
 
