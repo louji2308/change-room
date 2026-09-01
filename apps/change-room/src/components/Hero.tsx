@@ -9,6 +9,15 @@ export default function Hero() {
         <div className="hero-grid" />
         <div className="hero-glow" />
       </div>
+      <img
+        src="/bush-mountain.webp"
+        alt=""
+        className="hero-mountain"
+        aria-hidden="true"
+        width="1920"
+        height="600"
+        loading="eager"
+      />
 
       <div className="hero-inner">
         <span className="hero-eyebrow">human + AI operational control · medusa e-commerce sandbox</span>

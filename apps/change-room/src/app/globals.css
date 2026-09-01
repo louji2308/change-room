@@ -663,7 +663,7 @@ p {
   }
 }
 
-/* ═══ HERO — stacked, normal scroll ═══ */
+/* ═══ HERO ═══ */
 .hero {
   position: relative;
   display: flex;
@@ -703,9 +703,24 @@ p {
     radial-gradient(30% 55% at 42% 42%, rgba(205, 185, 255, 0.18), transparent 70%);
   filter: blur(28px);
 }
+.hero-mountain {
+  position: absolute;
+  left: -5%;
+  right: -5%;
+  bottom: 0;
+  height: 45vh;
+  min-height: 320px;
+  width: 110%;
+  object-fit: cover;
+  object-position: center top;
+  z-index: 1;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 30%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 30%);
+}
 .hero-inner {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
