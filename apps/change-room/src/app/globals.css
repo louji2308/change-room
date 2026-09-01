@@ -604,14 +604,7 @@ p {
   width: 42px;
   height: 42px;
   border-radius: var(--r-md);
-  background: linear-gradient(135deg, var(--lilac), var(--blue), var(--teal));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 1.2rem;
-  color: #000;
-  box-shadow: 0 4px 20px rgba(205, 185, 255, 0.3);
+  object-fit: contain;
   flex: none;
 }
 .topbar .subtitle {
@@ -752,7 +745,7 @@ p {
   content: "";
   position: absolute;
   top: 50%;
-  right: 4px;
+  left: -140px;
   width: 140px;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.9));
@@ -870,6 +863,8 @@ p {
   max-width: 56ch;
   color: var(--text-dim);
   font-size: clamp(0.95rem, 1.6vw, 1.15rem);
+  font-weight: 200;
+  letter-spacing: 0.02em;
   line-height: 1.6;
   margin: var(--sp-5) 0 0;
 }
@@ -882,6 +877,8 @@ p {
 }
 .hero-ctas .button {
   font-size: 14px;
+  font-weight: 300;
+  letter-spacing: 0.04em;
   padding: 0.75rem 1.6rem;
   border-radius: 999px;
 }
@@ -895,6 +892,8 @@ p {
 .hero-chip {
   font-family: var(--font-mono);
   font-size: 12px;
+  font-weight: 300;
+  letter-spacing: 0.06em;
   color: var(--text-dim);
   padding: 0.5rem 1rem;
   border: 1px solid var(--border);

@@ -140,7 +140,7 @@ export default function ControlRoom() {
       <div className="app-shell" id="control-room">
         <header className="topbar">
           <div className="brand-row">
-            <div className="logo-mark">CR</div>
+              <img src="/cr-logo.png" alt="Change Room" className="logo-mark" width="42" height="42" />
             <div>
               <h2 className="brand-title">Change Room</h2>
               <div className="subtitle">shared human + AI operational control</div>
