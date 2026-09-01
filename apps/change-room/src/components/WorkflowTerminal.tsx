@@ -41,7 +41,7 @@ export default function WorkflowTerminal() {
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
     const reduced = mq.matches;
-    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, reduced ? 0 : ms));
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, reduced ? 0 : ms * 0.55));
 
     const fail = (label: string, detail: string) => {
       push({ word: label, detail, tone: "err" });
