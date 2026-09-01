@@ -723,8 +723,19 @@ p {
   z-index: 2;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  max-width: 520px;
+}
+.hero-split {
+  position: relative;
+  z-index: 2;
+  display: flex;
   align-items: center;
-  max-width: 900px;
+  justify-content: space-between;
+  gap: var(--sp-8);
+  width: 100%;
+  max-width: 1080px;
 }
 .hero-eyebrow {
   font-family: var(--font-mono);
@@ -793,7 +804,24 @@ p {
 .hero-terminal-wrap {
   position: relative;
   z-index: 1;
-  width: min(720px, 94vw);
+  flex: 1;
+  min-width: 380px;
+  max-width: 640px;
+}
+@media (max-width: 860px) {
+  .hero-split {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .hero-inner {
+    align-items: center;
+    text-align: center;
+    max-width: none;
+  }
+  .hero-terminal-wrap {
+    min-width: 0;
+    max-width: none;
+  }
 }
 .hero-down {
   position: relative;
