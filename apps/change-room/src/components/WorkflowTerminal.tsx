@@ -15,6 +15,7 @@ const MAX_LINES = 16;
 const DEFAULT_SCENARIO = "cache-failure";
 
 let globalRan = false;
+let autoplayStarted = false;
 
 function short(s: unknown, max = 110): string {
   const t = typeof s === "string" ? s : "";
@@ -32,15 +33,12 @@ export default function WorkflowTerminal() {
   const [lines, setLines] = useState<Line[]>([]);
   const [replay, setReplay] = useState(true);
   const idRef = useRef(0);
-  const cancelledRef = useRef(false);
 
   const push = useCallback((line: Omit<Line, "id">) => {
     setLines((prev) => [...prev.slice(-(MAX_LINES - 1)), { id: ++idRef.current, ...line }]);
   }, []);
 
   useEffect(() => {
-    cancelledRef.current = false;
-    let cancelled = false;
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
     const reduced = mq.matches;
     const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, reduced ? 0 : ms));
@@ -53,16 +51,13 @@ export default function WorkflowTerminal() {
       await sleep(450);
 
       if (globalRan) {
-        // Already driven once this page lifetime: render a static recap from
-        // the current session instead of mutating it further.
         const view = await getState().catch(() => null);
-        if (!view || cancelled) return;
+        if (!view) return;
         renderRecap(view);
         return;
       }
 
       const view0 = await getState().catch(() => null);
-      if (cancelled) return;
       if (view0 && view0.workflow !== "IDLE") {
         renderRecap(view0);
         return;
@@ -74,7 +69,6 @@ export default function WorkflowTerminal() {
       const steps = (view.flight?.steps ?? []) as Array<{ type: string; resultSummary: string }>;
       const tail = steps.slice(-7);
       for (const s of tail) {
-        if (cancelled) return;
         push({ word: s.type ?? "step", detail: short(s.resultSummary), tone: toneForType(s.type) });
       }
       push({ word: "state", detail: `${view.workflow} · health=${view.health}`, tone: "ok" });
@@ -86,13 +80,13 @@ export default function WorkflowTerminal() {
       push({ word: "start", detail: `detected incident · ${DEFAULT_SCENARIO}`, tone: "cy" });
       await sleep(140);
       const s = await api("start", { scenarioId: DEFAULT_SCENARIO }).catch(() => null);
-      if (!s?.ok || cancelled) return fail("start", s?.error ?? "sandbox unreachable");
+      if (!s?.ok) return fail("start", s?.error ?? "sandbox unreachable");
       await sleep(240);
 
       push({ word: "reason", detail: "agent formed hypotheses from observable evidence" });
       await sleep(120);
       const r = await api("reason", { goal: "restore system health" }).catch(() => null);
-      if (!r?.ok || cancelled) return fail("reason", r?.error ?? "no plans");
+      if (!r?.ok) return fail("reason", r?.error ?? "no plans");
       const plans = r.view?.plans ?? [];
       if (plans.length === 0) return fail("plan", "agent produced no plans");
       await sleep(220);
@@ -102,7 +96,7 @@ export default function WorkflowTerminal() {
       push({ word: "plan", detail: `selected ${plan.id} ${planLabel}`, tone: "cy" });
       await sleep(120);
       const sel = await api("select", { planId: plan.id }).catch(() => null);
-      if (!sel?.ok || cancelled) return fail("select", sel?.error ?? "cannot select plan");
+      if (!sel?.ok) return fail("select", sel?.error ?? "cannot select plan");
       const sim = sel.view?.simulations?.[0];
       await sleep(220);
 
@@ -117,13 +111,13 @@ export default function WorkflowTerminal() {
       push({ word: "gate", detail: "change-control policy check", tone: "cy" });
       await sleep(120);
       const g = await api("prepare").catch(() => null);
-      if (!g?.ok || cancelled) return fail("gate", g?.error ?? "policy check failed");
+      if (!g?.ok) return fail("gate", g?.error ?? "policy check failed");
       const gate = g.gate ?? {};
       if (gate.approvalRequired) {
         push({ word: "approve", detail: `WAITING FOR HUMAN · ${gate.reason ?? "approval required"}`, tone: "err" });
         await sleep(500);
         const a = await api("approve").catch(() => null);
-        if (!a?.ok || cancelled) return fail("approve", a?.error ?? "approval failed");
+        if (!a?.ok) return fail("approve", a?.error ?? "approval failed");
         push({ word: "human", detail: "shared-control: human approved the change plan", tone: "ok" });
         await sleep(200);
       } else {
@@ -134,7 +128,7 @@ export default function WorkflowTerminal() {
       push({ word: "execute", detail: `applying ${plan.actions?.[0]?.type ?? "change"} …`, tone: "dim" });
       await sleep(160);
       const e = await api("execute").catch(() => null);
-      if (!e?.ok || cancelled) return fail("execute", e?.error ?? "execution failed");
+      if (!e?.ok) return fail("execute", e?.error ?? "execution failed");
       push({
         word: "execute",
         detail: `done · ok=${String(e.execution?.ok)} health=${e.view?.health ?? "?"}`,
@@ -143,7 +137,7 @@ export default function WorkflowTerminal() {
       await sleep(200);
 
       const v = await api("verify").catch(() => null);
-      if (!v?.ok || cancelled) return fail("verify", v?.error ?? "verification failed");
+      if (!v?.ok) return fail("verify", v?.error ?? "verification failed");
       const verdict = v.verification?.verdict;
       push({
         word: "verify",
@@ -155,15 +149,12 @@ export default function WorkflowTerminal() {
       setReplay(false);
     };
 
-    const t = setTimeout(() => {
-      void autoplay();
-    }, 120);
+    if (autoplayStarted) return;
+    autoplayStarted = true;
 
-    return () => {
-      cancelled = true;
-      cancelledRef.current = true;
-      clearTimeout(t);
-    };
+    void autoplay().catch(() => {
+      fail("client", "could not reach sandbox");
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

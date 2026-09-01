@@ -743,20 +743,22 @@ p {
 .hero-stars span:nth-child(3n) { background: var(--teal); }
 .hero-stars span:nth-child(3n + 1) { background: var(--lilac); }
 
-/* log wall */
+/* log wall — kept as a faint top/bottom texture so it never collides with the
+   headline block (only texture text-on-text is ugly; here the center is clear) */
 .hero-logs {
   position: absolute;
   inset: 0 0 auto 0;
-  padding-top: 18vh;
+  padding-top: 6vh;
   overflow: hidden;
   color: var(--text-faint);
   font-family: var(--font-mono);
-  font-size: clamp(11px, 1.4vh, 15px);
-  line-height: 2.15;
-  opacity: 0.5;
-  -webkit-mask-image: linear-gradient(180deg, transparent, #000 18%, #000 80%, transparent);
-  mask-image: linear-gradient(180deg, transparent, #000 18%, #000 80%, transparent);
+  font-size: clamp(10px, 1.1vh, 13px);
+  letter-spacing: 0.14em;
+  line-height: 1.9;
+  opacity: 0.3;
   white-space: nowrap;
+  -webkit-mask-image: linear-gradient(180deg, #000 0, #000 10vh, transparent 10vh, transparent 70vh, #000 70vh, #000 100vh);
+  mask-image: linear-gradient(180deg, #000 0, #000 10vh, transparent 10vh, transparent 70vh, #000 70vh, #000 100vh);
 }
 .hero-logs .err { color: var(--red); }
 .hero-logs .lvl { color: var(--text-dim); }
@@ -767,15 +769,16 @@ p {
   inset: 0;
   width: 100%;
   height: 100%;
-  opacity: 0.55;
+  opacity: 0.4;
 }
 .topo-node {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 9px;
   fill: var(--text-dim);
-  letter-spacing: 0.08em;
+  opacity: 0.7;
+  letter-spacing: 0.12em;
 }
-.topo-path { stroke: rgba(179, 217, 255, 0.22); fill: none; }
+.topo-path { stroke: rgba(179, 217, 255, 0.18); fill: none; }
 .topo-blip { filter: drop-shadow(0 0 4px currentColor); }
 
 /* telemetry bars */
@@ -785,8 +788,8 @@ p {
   display: flex;
   align-items: flex-end;
   gap: 6px;
-  padding: 14vh 18vw 22vh;
-  opacity: 0.55;
+  padding: 16vh 16vw 20vh;
+  opacity: 0.35;
 }
 .hero-telemetry i {
   flex: 1;
@@ -844,6 +847,7 @@ p {
   background-clip: text;
   color: transparent;
   text-wrap: balance;
+  text-shadow: 0 2px 28px rgba(0, 0, 0, 0.75), 0 0 2px rgba(0, 0, 0, 0.9);
 }
 .hero-sub {
   max-width: 56ch;
@@ -851,6 +855,7 @@ p {
   font-size: clamp(0.95rem, 1.6vw, 1.15rem);
   line-height: 1.6;
   margin: var(--sp-5) 0 0;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.9);
 }
 .hero-ctas {
   display: flex;
