@@ -754,18 +754,18 @@ p {
   border-radius: 999px;
 }
 .hero-shooting i:nth-child(1) {
-  top: 10%;
+  top: 8%;
   right: -5%;
   animation: shoot1 5s 0.5s ease-in infinite;
 }
 .hero-shooting i:nth-child(2) {
-  top: 22%;
-  right: 15%;
+  top: 15%;
+  left: 40%;
   animation: shoot2 6s 3s ease-in infinite;
 }
 .hero-shooting i:nth-child(3) {
-  top: 6%;
-  right: 8%;
+  top: 5%;
+  left: 15%;
   animation: shoot3 5.5s 6s ease-in infinite;
 }
 /* -35deg diagonal: top-right → bottom-left */
@@ -830,8 +830,9 @@ p {
 }
 .hero-eyebrow {
   font-family: var(--font-mono);
-  font-size: clamp(11px, 1vw, 13px);
-  letter-spacing: 0.18em;
+  font-size: clamp(10px, 0.9vw, 12px);
+  font-weight: 200;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--text-dim);
   display: inline-flex;
@@ -848,9 +849,9 @@ p {
 .hero-title {
   font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
   font-size: clamp(2.4rem, 5.5vw, 4.2rem);
-  font-weight: 700;
+  font-weight: 100;
   line-height: 1.04;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   max-width: 14ch;
   margin: var(--sp-6) 0 0;
   background: linear-gradient(120deg, #fff 30%, var(--lilac) 60%, var(--teal) 100%);
