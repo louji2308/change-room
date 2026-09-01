@@ -734,36 +734,59 @@ p {
 .hero-shooting i {
   position: absolute;
   display: block;
-  width: 120px;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.8), transparent);
-  border-radius: 999px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 6px 2px rgba(255,255,255,0.6);
   opacity: 0;
 }
+/* tail via ::before */
+.hero-shooting i::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 140px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.9));
+  transform: translateY(-50%);
+  border-radius: 999px;
+}
 .hero-shooting i:nth-child(1) {
-  top: 12%;
-  left: 60%;
-  transform: rotate(-35deg);
-  animation: shoot 6s 1s ease-in infinite;
+  top: 10%;
+  right: -5%;
+  animation: shoot1 5s 0.5s ease-in infinite;
 }
 .hero-shooting i:nth-child(2) {
-  top: 25%;
-  left: 30%;
-  width: 80px;
-  transform: rotate(-40deg);
-  animation: shoot 8s 4s ease-in infinite;
+  top: 22%;
+  right: 15%;
+  animation: shoot2 6s 3s ease-in infinite;
 }
 .hero-shooting i:nth-child(3) {
-  top: 8%;
-  left: 75%;
-  width: 100px;
-  transform: rotate(-30deg);
-  animation: shoot 7s 7s ease-in infinite;
+  top: 6%;
+  right: 8%;
+  animation: shoot3 5.5s 6s ease-in infinite;
 }
-@keyframes shoot {
-  0% { opacity: 0; transform: translateX(0) rotate(-35deg); }
-  2% { opacity: 1; }
-  8% { opacity: 0; transform: translateX(-220px) rotate(-35deg); }
+/* -35deg diagonal: top-right → bottom-left */
+@keyframes shoot1 {
+  0%   { opacity: 0; transform: rotate(-35deg) translateX(0); }
+  3%   { opacity: 1; }
+  12%  { opacity: 0; transform: rotate(-35deg) translateX(-500px); }
+  100% { opacity: 0; }
+}
+/* -40deg diagonal */
+@keyframes shoot2 {
+  0%   { opacity: 0; transform: rotate(-40deg) translateX(0); }
+  3%   { opacity: 1; }
+  12%  { opacity: 0; transform: rotate(-40deg) translateX(-450px); }
+  100% { opacity: 0; }
+}
+/* -30deg diagonal */
+@keyframes shoot3 {
+  0%   { opacity: 0; transform: rotate(-30deg) translateX(0); }
+  3%   { opacity: 1; }
+  12%  { opacity: 0; transform: rotate(-30deg) translateX(-550px); }
   100% { opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
