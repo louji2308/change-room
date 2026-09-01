@@ -733,9 +733,11 @@ p {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-8);
+  gap: clamp(2rem, 5vw, 6rem);
   width: 100%;
-  max-width: 1080px;
+  max-width: 1160px;
+  padding-left: clamp(1rem, 4vw, 5rem);
+  padding-right: clamp(1rem, 2vw, 2rem);
 }
 .hero-eyebrow {
   font-family: var(--font-mono);
@@ -755,10 +757,12 @@ p {
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
 }
 .hero-title {
-  font-size: clamp(2.2rem, 6vw, 4.4rem);
+  font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
+  font-size: clamp(2.4rem, 5.5vw, 4.2rem);
+  font-weight: 700;
   line-height: 1.04;
-  letter-spacing: -0.04em;
-  max-width: 15ch;
+  letter-spacing: -0.03em;
+  max-width: 14ch;
   margin: var(--sp-6) 0 0;
   background: linear-gradient(120deg, #fff 30%, var(--lilac) 60%, var(--teal) 100%);
   -webkit-background-clip: text;
