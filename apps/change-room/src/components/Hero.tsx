@@ -7,7 +7,14 @@ export default function Hero() {
     <section className="hero" aria-label="Change Room — introduction">
       <div className="hero-bg" aria-hidden="true">
         <div className="hero-grid" />
-        <div className="hero-glow" />
+        <div className="hero-stars">
+          {Array.from({ length: 20 }, (_, i) => (
+            <span key={i} />
+          ))}
+        </div>
+        <div className="hero-shooting">
+          <i /><i /><i />
+        </div>
       </div>
       <img
         src="/bush-mountain.webp"

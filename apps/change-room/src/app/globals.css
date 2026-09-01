@@ -670,10 +670,10 @@ p {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: clamp(4rem, 10vh, 7rem) var(--sp-6) var(--sp-8);
+  padding: clamp(4rem, 10vh, 7rem) var(--sp-6) var(--sp-8) 0;
   gap: var(--sp-8);
   overflow: hidden;
-  background: radial-gradient(120% 90% at 50% 0%, #0a0a12 0%, #050507 42%, var(--bg) 100%);
+  background: linear-gradient(180deg, #000 0%, #0a0a0f 30%, #12121a 60%, #1a1a24 85%, #22222e 100%);
 }
 .hero-bg {
   position: absolute;
@@ -685,23 +685,89 @@ p {
   position: absolute;
   inset: -20%;
   background-image:
-    linear-gradient(rgba(205, 185, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(205, 185, 255, 0.05) 1px, transparent 1px);
+    linear-gradient(rgba(205, 185, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(205, 185, 255, 0.025) 1px, transparent 1px);
   background-size: 72px 72px;
   -webkit-mask-image: radial-gradient(75% 60% at 50% 35%, #000 30%, transparent 78%);
   mask-image: radial-gradient(75% 60% at 50% 35%, #000 30%, transparent 78%);
 }
-.hero-glow {
+.hero-stars {
   position: absolute;
-  left: 50%;
+  inset: 0;
+}
+.hero-stars span {
+  position: absolute;
+  border-radius: 999px;
+  background: #fff;
+}
+.hero-stars span:nth-child(1) { width: 1px; height: 1px; top: 8%; left: 12%; opacity: 0.4; }
+.hero-stars span:nth-child(2) { width: 1px; height: 1px; top: 15%; left: 28%; opacity: 0.7; }
+.hero-stars span:nth-child(3) { width: 2px; height: 2px; top: 5%; left: 45%; opacity: 0.5; box-shadow: 0 0 4px 1px rgba(255,255,255,0.3); }
+.hero-stars span:nth-child(4) { width: 1px; height: 1px; top: 22%; left: 62%; opacity: 0.3; }
+.hero-stars span:nth-child(5) { width: 1px; height: 1px; top: 10%; left: 78%; opacity: 0.6; }
+.hero-stars span:nth-child(6) { width: 2px; height: 2px; top: 18%; left: 88%; opacity: 0.8; box-shadow: 0 0 6px 1px rgba(255,255,255,0.4); }
+.hero-stars span:nth-child(7) { width: 1px; height: 1px; top: 30%; left: 8%; opacity: 0.35; }
+.hero-stars span:nth-child(8) { width: 1px; height: 1px; top: 25%; left: 52%; opacity: 0.55; }
+.hero-stars span:nth-child(9) { width: 1px; height: 1px; top: 35%; left: 72%; opacity: 0.25; }
+.hero-stars span:nth-child(10) { width: 2px; height: 2px; top: 40%; left: 35%; opacity: 0.45; box-shadow: 0 0 5px 1px rgba(255,255,255,0.25); }
+.hero-stars span:nth-child(11) { width: 1px; height: 1px; top: 45%; left: 15%; opacity: 0.2; }
+.hero-stars span:nth-child(12) { width: 1px; height: 1px; top: 50%; left: 90%; opacity: 0.3; }
+.hero-stars span:nth-child(13) { width: 1px; height: 1px; top: 12%; left: 5%; opacity: 0.6; }
+.hero-stars span:nth-child(14) { width: 1px; height: 1px; top: 55%; left: 48%; opacity: 0.15; }
+.hero-stars span:nth-child(15) { width: 2px; height: 2px; top: 3%; left: 92%; opacity: 0.5; box-shadow: 0 0 4px 1px rgba(255,255,255,0.2); }
+.hero-stars span:nth-child(16) { width: 1px; height: 1px; top: 20%; left: 40%; opacity: 0.4; }
+.hero-stars span:nth-child(17) { width: 1px; height: 1px; top: 38%; left: 60%; opacity: 0.3; }
+.hero-stars span:nth-child(18) { width: 1px; height: 1px; top: 8%; left: 55%; opacity: 0.5; }
+.hero-stars span:nth-child(19) { width: 2px; height: 2px; top: 28%; left: 20%; opacity: 0.35; box-shadow: 0 0 3px 1px rgba(255,255,255,0.15); }
+.hero-stars span:nth-child(20) { width: 1px; height: 1px; top: 42%; left: 82%; opacity: 0.25; }
+
+/* shooting stars (vinmeen) */
+.hero-shooting {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+.hero-shooting i {
+  position: absolute;
+  display: block;
+  width: 120px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.8), transparent);
+  border-radius: 999px;
+  opacity: 0;
+}
+.hero-shooting i:nth-child(1) {
+  top: 12%;
+  left: 60%;
+  transform: rotate(-35deg);
+  animation: shoot 6s 1s ease-in infinite;
+}
+.hero-shooting i:nth-child(2) {
+  top: 25%;
+  left: 30%;
+  width: 80px;
+  transform: rotate(-40deg);
+  animation: shoot 8s 4s ease-in infinite;
+}
+.hero-shooting i:nth-child(3) {
   top: 8%;
-  width: 820px;
-  height: 560px;
-  transform: translateX(-50%);
-  background:
-    radial-gradient(40% 60% at 50% 50%, rgba(169, 222, 218, 0.14), transparent 70%),
-    radial-gradient(30% 55% at 42% 42%, rgba(205, 185, 255, 0.18), transparent 70%);
-  filter: blur(28px);
+  left: 75%;
+  width: 100px;
+  transform: rotate(-30deg);
+  animation: shoot 7s 7s ease-in infinite;
+}
+@keyframes shoot {
+  0% { opacity: 0; transform: translateX(0) rotate(-35deg); }
+  2% { opacity: 1; }
+  8% { opacity: 0; transform: translateX(-220px) rotate(-35deg); }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-shooting i { animation: none; }
 }
 .hero-mountain {
   position: absolute;
@@ -736,7 +802,7 @@ p {
   gap: clamp(2rem, 5vw, 6rem);
   width: 100%;
   max-width: 1160px;
-  padding-left: clamp(1rem, 4vw, 5rem);
+  padding-left: 0;
   padding-right: clamp(1rem, 2vw, 2rem);
 }
 .hero-eyebrow {
