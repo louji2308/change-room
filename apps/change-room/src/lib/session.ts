@@ -11,6 +11,7 @@
  */
 
 import { ScenarioRunner } from "@change-room/scenarios";
+import type { UndoFrame } from "@change-room/scenarios";
 import type { ActionType, BusinessKpis, PredictionResult } from "@change-room/simulator";
 import { metricsOf } from "@change-room/verification";
 import { AgentOrchestrator, challengePlan } from "@change-room/agent";
@@ -103,6 +104,8 @@ export class ChangeRoomSession {
   private paused = false;
   /** Mutations committed by the human since the current plan (conflict detection). */
   private humanMutations: StateMutation[] = [];
+  /** Snapshot undo frames keyed by plan id for rollback. */
+  private undoFrames = new Map<string, UndoFrame>();
 
   /** Most recent agent goal (Phase 17: reused by the generate_plans tool). */
   private lastGoal: string | null = null;
@@ -128,6 +131,7 @@ export class ChangeRoomSession {
     this.delegation = null;
     this.paused = false;
     this.humanMutations = [];
+    this.undoFrames.clear();
   }
 
   /** Start a scenario (by its stable scenario-database id) and run to baseline. */
@@ -199,6 +203,7 @@ export class ChangeRoomSession {
         currentStateVersion: currentVersion,
         permission: this.permission,
         delegation: this.delegation,
+        intentContract: this.orchestrator!.last.contract,
         now: Date.now(),
         mutationsSince: this.humanMutations,
       },
@@ -242,6 +247,7 @@ export class ChangeRoomSession {
         currentStateVersion: this.currentVersion,
         permission: this.permission,
         delegation: this.delegation,
+        intentContract: this.orchestrator!.last.contract,
         now: Date.now(),
         mutationsSince: this.humanMutations,
       },
@@ -273,6 +279,7 @@ export class ChangeRoomSession {
   executeChange(): { ok: boolean; health: string; error?: string } {
     const runner = this.requireRunner();
     const plan = this.selectedPlan();
+    const intentContract = this.orchestrator!.last.contract;
     const gate = this.lastGate;
 
     if (this.paused) {
@@ -297,6 +304,34 @@ export class ChangeRoomSession {
       return { ok: false, health: runner.health(), error: `STALE_PLAN: plan bound to version ${plan.stateVersion} but current state is ${this.currentVersion}` };
     }
 
+    // P0-5: Re-evaluate gate at execution time with current state. Between
+    // prepareChange() and now the world may have changed (new disturbances,
+    // delegation expiry, human mutations, policy shift). The gate must catch it.
+    const execGate = evaluateGate(
+      {
+        plan,
+        intentContract,
+        currentStateVersion: this.currentVersion,
+        permission: this.permission,
+        delegation: this.delegation,
+        now: Date.now(),
+        mutationsSince: this.humanMutations,
+      },
+      this.policy
+    );
+    if (!execGate.allowed) {
+      this.workflow = "STALE";
+      this.phase = { name: "deviated", verdict: "GATE_DENIED" };
+      this.lastGate = execGate;
+      this.flight.record({
+        actor: "system",
+        type: "execution_started",
+        planId: plan.id,
+        resultSummary: `GATE_DENIED_AT_EXECUTION: ${execGate.stage}: ${execGate.reason}`,
+      });
+      return { ok: false, health: runner.health(), error: `GATE_DENIED_AT_EXECUTION: ${execGate.stage}: ${execGate.reason}` };
+    }
+
     this.workflow = "EXECUTING";
     this.flight.record({ actor: "system", type: "execution_started", planId: plan.id });
 
@@ -309,6 +344,12 @@ export class ChangeRoomSession {
 
     const res = runner.executeChange(action.type as ActionType, (action.parameters ?? {}) as Record<string, number | string>, { neutralizeDisturbances: true });
     runner.settle(24);
+
+    // P0-6: Capture the undo frame from the engine for snapshot-based rollback.
+    const undoFrame = runner.popUndoFrame();
+    if (undoFrame) {
+      this.undoFrames.set(plan.id, undoFrame);
+    }
 
     // Record actual result for prediction-vs-reality comparison.
     const kpis = runner.agentView().kpis;
@@ -344,6 +385,24 @@ export class ChangeRoomSession {
   rollbackChange(): void {
     const runner = this.requireRunner();
     const plan = this.selectedPlan();
+
+    // P0-6: Use the stored undo frame for exact snapshot-based rollback when
+    // available. This reverts the base tuning, latency modifiers and
+    // disturbances to the exact pre-execution state — much more precise than
+    // the inverse-op approximation.
+    const undoFrame = this.undoFrames.get(plan.id);
+    if (undoFrame) {
+      this.undoFrames.delete(plan.id);
+      const res = runner.rollback();
+      runner.settle(24);
+      this.workflow = "RECOVERING";
+      this.phase = { name: "recovered" };
+      this.flight.record({ actor: "system", type: "rollback", planId: plan.id, resultSummary: `snapshot rollback: ok=${res.ok}; health=${runner.health()}` });
+      return;
+    }
+
+    // Fallback: inverse-op rollback for operations without an undo frame
+    // (backward compatibility during transition).
     const original = plan.actions[0]?.type as ActionType;
     const rollbackFor: Partial<Record<ActionType, ActionType>> = {
       increase_cache_capacity: "restart_cache",
@@ -356,7 +415,7 @@ export class ChangeRoomSession {
     runner.settle(24);
     this.workflow = "RECOVERING";
     this.phase = { name: "recovered" };
-    this.flight.record({ actor: "system", type: "rollback", planId: plan.id, resultSummary: `rolled back ${original} via ${rb}; health=${runner.health()}` });
+    this.flight.record({ actor: "system", type: "rollback", planId: plan.id, resultSummary: `inverse-op rollback ${original} via ${rb}; health=${runner.health()}` });
   }
 
   /** Agent requests a human decision (blind-safe ask). */
@@ -446,6 +505,7 @@ export class ChangeRoomSession {
       this.selectedPlanId = null;
       this.lastGate = null;
       this.humanMutations = [];
+      this.undoFrames.clear();
       this.flight.record({
         actor: "system",
         type: "agent_resumed",
@@ -524,6 +584,7 @@ export class ChangeRoomSession {
     this.selectedPlanId = null;
     this.lastGate = null;
     this.humanMutations = [];
+    this.undoFrames.clear();
     this.workflow = freshResult.plans.length > 0 ? "PLAN_READY" : "INVESTIGATING";
 
     this.flight.record({

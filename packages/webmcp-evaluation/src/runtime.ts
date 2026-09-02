@@ -275,6 +275,7 @@ export class WebMCPRuntime implements ToolRuntime {
         plan,
         currentStateVersion: this.currentStateVersion,
         permission: { granted: ["observe", "recommend", "prepare", "execute-with-approval"], level: AGENT_LEVEL },
+        intentContract: this.orchestrator.last?.contract,
         now: Date.now(),
         mutationsSince: this.humanMutations,
       },

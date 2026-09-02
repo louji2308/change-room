@@ -38,7 +38,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "inspect_system",
     description: "Read the current operational state: health, KPIs and component metrics. Read-only.",
-    inputSchema: {},
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
     readOnly: true,
     group: "observation",
     states: ["CONTRACT_SET", "INVESTIGATING", "PLAN_READY", "SIMULATED", "WAITING_FOR_APPROVAL", "APPROVED", "EXECUTED", "VERIFYING", "DEVIATION", "RECOVERING", "COMPLETE"],
@@ -46,7 +46,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "investigate",
     description: "Collect structured evidence about the current incident from the observable view. Read-only.",
-    inputSchema: { focus: { type: "string", description: "Optional component or metric to focus on", required: false } },
+    inputSchema: { type: "object", properties: { focus: { type: "string", description: "Optional component or metric to focus on" } }, required: [], additionalProperties: false },
     readOnly: true,
     group: "observation",
     states: ["CONTRACT_SET", "INVESTIGATING", "DEVIATION"],
@@ -54,7 +54,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "get_evidence",
     description: "Return previously collected evidence with source, relevance and trust. Read-only.",
-    inputSchema: { hypothesisId: { type: "string", description: "Filter evidence by hypothesis", required: false } },
+    inputSchema: { type: "object", properties: { hypothesisId: { type: "string", description: "Filter evidence by hypothesis" } }, required: [], additionalProperties: false },
     readOnly: true,
     group: "observation",
     states: ["INVESTIGATING", "PLAN_READY", "SIMULATED", "DEVIATION", "COMPLETE"],
@@ -62,7 +62,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "inspect_history",
     description: "Read the auditable event/decision history (flight recorder). Read-only.",
-    inputSchema: { limit: { type: "integer", description: "Max events to return", required: false } },
+    inputSchema: { type: "object", properties: { limit: { type: "integer", description: "Max events to return" } }, required: [], additionalProperties: false },
     readOnly: true,
     group: "observation",
     states: ["CONTRACT_SET", "INVESTIGATING", "PLAN_READY", "SIMULATED", "WAITING_FOR_APPROVAL", "APPROVED", "EXECUTED", "VERIFYING", "DEVIATION", "RECOVERING", "COMPLETE"],
@@ -70,7 +70,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "generate_plans",
     description: "Generate multiple candidate remediation plans from the current diagnosis. Read-only.",
-    inputSchema: {},
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
     readOnly: true,
     group: "decision",
     states: ["INVESTIGATING", "PLAN_READY", "DEVIATION"],
@@ -78,7 +78,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "compare_plans",
     description: "Compare candidate plans side by side by risk, blast radius, reversibility and confidence. Read-only.",
-    inputSchema: {},
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
     readOnly: true,
     group: "decision",
     states: ["PLAN_READY", "SIMULATED", "DEVIATION"],
@@ -86,7 +86,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "simulate_plan",
     description: "Simulate a plan on an isolated prediction world — never mutates the real sandbox. Read-only.",
-    inputSchema: { planId: { type: "string", description: "ID of the plan to simulate", required: true } },
+    inputSchema: { type: "object", properties: { planId: { type: "string", description: "ID of the plan to simulate" } }, required: ["planId"], additionalProperties: false },
     readOnly: true,
     group: "decision",
     states: ["PLAN_READY", "SIMULATED"],
@@ -94,7 +94,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "challenge_plan",
     description: "Attempt to disprove a plan: surface counterevidence, weak assumptions and failure modes. Read-only.",
-    inputSchema: { planId: { type: "string", description: "ID of the plan to challenge", required: true } },
+    inputSchema: { type: "object", properties: { planId: { type: "string", description: "ID of the plan to challenge" } }, required: ["planId"], additionalProperties: false },
     readOnly: true,
     group: "decision",
     states: ["PLAN_READY", "SIMULATED"],
@@ -102,7 +102,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "prepare_change",
     description: "Prepare a human-readable change request from a plan for approval. Read-only (creates a draft, no mutation yet).",
-    inputSchema: { planId: { type: "string", description: "ID of the plan to prepare", required: true } },
+    inputSchema: { type: "object", properties: { planId: { type: "string", description: "ID of the plan to prepare" } }, required: ["planId"], additionalProperties: false },
     readOnly: true,
     group: "control",
     states: ["SIMULATED", "WAITING_FOR_APPROVAL"],
@@ -110,7 +110,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "validate_policy",
     description: "Check whether a prepared plan is allowed by policy (no mutation). Read-only.",
-    inputSchema: { planId: { type: "string", description: "ID of the plan to validate", required: true } },
+    inputSchema: { type: "object", properties: { planId: { type: "string", description: "ID of the plan to validate" } }, required: ["planId"], additionalProperties: false },
     readOnly: true,
     group: "control",
     states: ["SIMULATED", "WAITING_FOR_APPROVAL"],
@@ -118,7 +118,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "request_human_decision",
     description: "Request a human decision (approve/reject/modify) for a prepared plan. Read-only at the agent level.",
-    inputSchema: { requestId: { type: "string", description: "Change/approval request id", required: true }, ask: { type: "string", description: "What the agent is asking", required: true } },
+    inputSchema: { type: "object", properties: { requestId: { type: "string", description: "Change/approval request id" }, ask: { type: "string", description: "What the agent is asking" } }, required: ["requestId", "ask"], additionalProperties: false },
     readOnly: true,
     group: "control",
     states: ["SIMULATED", "WAITING_FOR_APPROVAL", "DEVIATION"],
@@ -126,7 +126,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "execute_change",
     description: "Execute an approved change through the Change Control layer. MUTATES real sandbox state. Requires prior approval authority.",
-    inputSchema: { planId: { type: "string", description: "ID of the approved plan to execute", required: true } },
+    inputSchema: { type: "object", properties: { planId: { type: "string", description: "ID of the approved plan to execute" } }, required: ["planId"], additionalProperties: false },
     readOnly: false,
     group: "action",
     states: ["APPROVED"],
@@ -134,7 +134,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "verify_change",
     description: "Verify the actual result of an executed change against the plan's prediction. Read-only.",
-    inputSchema: { planId: { type: "string", description: "ID of the executed plan", required: true } },
+    inputSchema: { type: "object", properties: { planId: { type: "string", description: "ID of the executed plan" } }, required: ["planId"], additionalProperties: false },
     readOnly: true,
     group: "verification",
     states: ["EXECUTING", "EXECUTED", "VERIFYING", "DEVIATION", "RECOVERING", "COMPLETE"],
@@ -142,7 +142,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: "rollback_change",
     description: "Roll back a change through Change Control. MUTATES real sandbox state; itself a consequential, controlled action.",
-    inputSchema: { planId: { type: "string", description: "ID of the plan to roll back", required: true } },
+    inputSchema: { type: "object", properties: { planId: { type: "string", description: "ID of the plan to roll back" } }, required: ["planId"], additionalProperties: false },
     readOnly: false,
     group: "action",
     states: ["EXECUTED", "DEVIATION", "RECOVERING"],

@@ -25,7 +25,7 @@ import { getScenario } from "./registry.js";
  * values — consequences still emerge from the causal model.
  */
 
-interface UndoFrame {
+export interface UndoFrame {
   trafficLevel: number;
   capacityMultiplier: Record<string, number>;
   latencyModifier: Record<string, number>;
@@ -168,6 +168,16 @@ export class ScenarioRunner {
       this.neutralizeRelated(actionType);
     }
     return { ok: true, unmet: [], health: this.health() };
+  }
+
+  /** Return the most recent UndoFrame without popping it, or undefined. */
+  lastUndoFrame(): UndoFrame | undefined {
+    return this.undoStack[this.undoStack.length - 1];
+  }
+
+  /** Pop and return the most recent UndoFrame, or undefined if empty. */
+  popUndoFrame(): UndoFrame | undefined {
+    return this.undoStack.pop();
   }
 
   /**

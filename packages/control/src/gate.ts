@@ -14,7 +14,7 @@ import { checkPermission, type PermissionContext } from "./permissions.js";
 import { decideAuthority, type AuthorityInput, type DelegationGrant } from "./authority.js";
 import { validatePlanFreshness } from "./stale-plan.js";
 import { detectConflicts, type StateMutation } from "./conflict.js";
-import type { Plan } from "@change-room/domain";
+import type { Plan, IntentContract } from "@change-room/domain";
 
 export interface GateContext {
   plan: Plan;
@@ -22,6 +22,7 @@ export interface GateContext {
   mutationsSince?: StateMutation[];
   permission: PermissionContext;
   delegation?: DelegationGrant | null;
+  intentContract?: IntentContract;
   now: number;
   riskOverrides?: Omit<RiskInput, "affected" | "reversibility">;
 }
@@ -48,7 +49,8 @@ export function evaluateGate(ctx: GateContext, policy: PolicyEngine): GateDecisi
       resources: ctx.plan.actions.flatMap((a) => resourcesForAction(a.type)),
       reversible: ctx.plan.reversibility === "fully-reversible" || ctx.plan.reversibility === "partially-reversible",
       risk: ctx.plan.risk.overall,
-    }
+    },
+    ctx.intentContract
   );
   if (!policyResult.allowed) {
     const denyRisk = assessRisk({ affected: [], reversibility: "fully-reversible", declaredRisk: "low" });

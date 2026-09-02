@@ -17,8 +17,8 @@ interface WebmcpHost {
     name: string;
     description: string;
     inputSchema?: Record<string, unknown>;
-    execute: (input: unknown) => unknown | Promise<unknown>;
-  }) => void;
+    execute: (input: unknown, options: { signal: AbortSignal }) => unknown | Promise<unknown>;
+  }) => void | Promise<void>;
   listTools?: () => Array<{ name: string }>;
   emitEvent?: (type: string, detail?: unknown) => void;
 }
@@ -46,11 +46,11 @@ export async function registerWithWebmcp(registry: WebmcpRegistry): Promise<stri
   const defs: ToolDefinition[] = TOOLS;
   for (const def of defs) {
     try {
-      h.registerTool({
+      await h.registerTool({
         name: def.name,
         description: def.description,
-        inputSchema: def.inputSchema as Record<string, unknown>,
-        execute: async (input: unknown) => {
+        inputSchema: def.inputSchema as unknown as Record<string, unknown>,
+        execute: async (input: unknown, options: { signal: AbortSignal }) => {
           const res = await registry.invoke(def.name, input);
           if (!res.ok) {
             return { ok: false, error: res.error, validation: res.validation };

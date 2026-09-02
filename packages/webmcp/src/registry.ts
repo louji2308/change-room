@@ -7,7 +7,7 @@
  * are gated (the runtime decides via Change Control).
  */
 
-import type { ToolName, WorkflowState, JsonSchemaField } from "@change-room/domain";
+import type { ToolName, WorkflowState, JsonSchemaField, JsonSchemaObject } from "@change-room/domain";
 import { TOOLS, getTool, toolAvailableInState, type ToolDefinition } from "./tools.js";
 import { classifyContent, isTrustedAsInstruction, type ContentClass } from "./security.js";
 
@@ -27,7 +27,7 @@ export class WebmcpRegistry {
   constructor(private readonly runtime: ToolRuntime) {}
 
   /** List all tools (for discovery) with their availability in the current state. */
-  discover(): Array<{ name: ToolName; description: string; inputSchema: Record<string, JsonSchemaField>; readOnly: boolean; group: string; available: boolean }> {
+  discover(): Array<{ name: ToolName; description: string; inputSchema: JsonSchemaObject; readOnly: boolean; group: string; available: boolean }> {
     const state = this.runtime.workflowState();
     return TOOLS.map((t) => ({
       name: t.name,
@@ -53,9 +53,18 @@ export class WebmcpRegistry {
     }
     const input = args as Record<string, unknown>;
     const errors: string[] = [];
-    for (const [key, field] of Object.entries(def.inputSchema)) {
+    const schema: JsonSchemaObject = def.inputSchema;
+    const properties = schema.properties ?? {};
+    const required = schema.required ?? [];
+    // Reject unknown fields (additionalProperties: false).
+    for (const key of Object.keys(input)) {
+      if (!(key in properties)) {
+        errors.push(`unknown field '${key}'`);
+      }
+    }
+    for (const [key, field] of Object.entries(properties)) {
       const present = input[key] !== undefined && input[key] !== null;
-      if (field.required && !present) {
+      if (required.includes(key) && !present) {
         errors.push(`missing required field '${key}'`);
         continue;
       }
@@ -70,12 +79,6 @@ export class WebmcpRegistry {
         if (typeof input[key] !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(input[key] as string)) {
           errors.push(`field '${key}' is not a valid id`);
         }
-      }
-    }
-    // Reject unknown fields.
-    for (const key of Object.keys(input)) {
-      if (!(key in def.inputSchema)) {
-        errors.push(`unknown field '${key}'`);
       }
     }
     if (errors.length > 0) return { ok: false, errors };

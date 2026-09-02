@@ -1,0 +1,1 @@
+var r=t=>t.payment_collections.map(e=>e.payments).flat(1).filter(Boolean);function a(t){return t?.items?.length?t.items.reduce((e,n)=>e+(n.variant?.inventory_items?.length||1),0):0}export{r as a,a as g};

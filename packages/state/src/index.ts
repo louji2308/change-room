@@ -6,3 +6,4 @@ export * from "./types.js";
 export * from "./resources.js";
 export * from "./store.js";
 export * from "./adapters/medusa.js";
+export * from "./probes/real-probes.js";

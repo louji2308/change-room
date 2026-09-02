@@ -1,4 +1,5 @@
 export { ScenarioRunner } from "./engine.js";
+export type { UndoFrame } from "./engine.js";
 export {
   SCENARIOS,
   getScenario,

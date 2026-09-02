@@ -34,6 +34,9 @@ coverage
 # Recon
 .recon
 
+# Internal audit / flaw tracking (never commit)
+implementation-flaws.md
+
 # NUL
 NUL
 

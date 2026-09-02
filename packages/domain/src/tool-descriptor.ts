@@ -29,11 +29,18 @@ export interface JsonSchemaField {
   required?: boolean;
 }
 
+export interface JsonSchemaObject {
+  type: "object";
+  properties: Record<string, JsonSchemaField>;
+  required?: string[];
+  additionalProperties?: boolean;
+}
+
 export interface ToolDescriptor {
   name: ToolName;
   description: string;
-  /** JSON-schema style input spec keyed by parameter name. */
-  inputSchema: Record<string, JsonSchemaField>;
+  /** JSON-schema style input spec — a valid JSON Schema object with type "object". */
+  inputSchema: JsonSchemaObject;
   /** Read-only tools never mutate state. */
   readOnly: boolean;
 }
