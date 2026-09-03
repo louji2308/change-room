@@ -38,12 +38,20 @@ export async function POST(req: NextRequest) {
         }
         return NextResponse.json({ ok: true, view: session.view() });
       }
+      case "start_real_scenario": {
+        const id = typeof body.scenarioId === "string" ? body.scenarioId : "cache-flush";
+        await session.startRealScenario(id);
+        return NextResponse.json({ ok: true, view: session.view() });
+      }
+      case "reset_real_scenario":
+        session.resetRealScenario();
+        return NextResponse.json({ ok: true, view: session.view() });
       case "reset":
         session.reset();
         return NextResponse.json({ ok: true, view: session.view() });
       case "reason": {
         const goal = typeof body.goal === "string" ? body.goal : "restore system health";
-        const result = session.reason(goal);
+        const result = await session.reason(goal);
         return NextResponse.json({ ok: true, result, view: session.view() });
       }
       case "select": {

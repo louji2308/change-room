@@ -14,7 +14,7 @@ import { ScenarioRunner } from "@change-room/scenarios";
 import type { UndoFrame } from "@change-room/scenarios";
 import type { ActionType, BusinessKpis, PredictionResult } from "@change-room/simulator";
 import { metricsOf } from "@change-room/verification";
-import { AgentOrchestrator, challengePlan, type SimulatedPlan } from "@change-room/agent";
+import { AgentOrchestrator, challengePlan, loadAgentModel, type AgentModel, type AgentAdvisory, type SimulatedPlan } from "@change-room/agent";
 import type { IntentContract, Hypothesis, Plan, ToolName, WorkflowState } from "@change-room/domain";
 import {
   evaluateGate,
@@ -29,6 +29,7 @@ import { FlightRecorder } from "@change-room/flight-recorder";
 import { PredictionVsReality } from "@change-room/verification";
 import { isValidId } from "@change-room/webmcp";
 import { RealMedusaWorld, type WorldSource } from "@/lib/real-world";
+import { RealScenarioRunner, getRealScenario } from "@/lib/real-scenario-runner";
 
 const AGENT_LEVEL = "L3" as const; // execute-with-approval: consequential changes need a human.
 
@@ -70,6 +71,8 @@ export interface PublicView {
   plans: Plan[];
   simulations: unknown[];
   topHypothesis: Hypothesis | null;
+  /** Best-effort LLM advisory narrative (reasoning layer only; never gates). */
+  advisory?: AgentAdvisory;
   selectedPlanId: string | null;
   gate: GateDecision | null;
   verification: ReturnType<PredictionVsReality["summary"]>;
@@ -88,6 +91,14 @@ export interface PublicView {
 export class ChangeRoomSession {
   private runner: WorldSource | null = null;
   private orchestrator: AgentOrchestrator | null = null;
+  /** LLM reasoning advisor (best-effort; control stays deterministic + authoritative). */
+  private model: AgentModel | null = (() => {
+    try {
+      return loadAgentModel().model;
+    } catch {
+      return null;
+    }
+  })();
   private policy = defaultPolicy();
   private workflow: WorkflowState = "IDLE";
   private permission: PermissionContext = { granted: ["observe", "recommend", "prepare", "execute-with-approval"], level: AGENT_LEVEL };
@@ -159,6 +170,22 @@ export class ChangeRoomSession {
     this.boot(world, name);
   }
 
+  /** Start a REAL-stack scenario: inject its bounded, auto-restored fault. */
+  async startRealScenario(id: string): Promise<void> {
+    if (!getRealScenario(id)) throw Object.assign(new Error(`unknown real scenario: ${id}`), { code: "NO_SCENARIO" });
+    const runner = RealScenarioRunner.setup(id);
+    await runner.refresh();
+    runner.start(); // inject the scenario's real fault (TTL auto-restore)
+    this.boot(runner, id);
+  }
+
+  /** Expire (auto-restore) any active real fault for the current scenario. */
+  resetRealScenario(): void {
+    const runner = this.runner;
+    if (runner && runner instanceof RealScenarioRunner) runner.reset();
+    this.flight.record({ actor: "system", type: "observation", resultSummary: "real scenario fault reset (auto-restored)" });
+  }
+
   /** Shared boot: wire the world source, orchestrator, and session state. */
   private boot(runner: WorldSource, name: string): void {
     this.runner = runner;
@@ -167,7 +194,11 @@ export class ChangeRoomSession {
     this.paused = false;
     this.humanMutations = [];
     this.undoFrames.clear();
-    this.orchestrator = new AgentOrchestrator({ sim: { predict: (a, o) => runner.predict(a, o) }, currentStateVersion: () => this.currentVersion });
+    this.orchestrator = new AgentOrchestrator({
+      sim: { predict: (a, o) => runner.predict(a, o) },
+      currentStateVersion: () => this.currentVersion,
+      model: this.model ?? undefined,
+    });
     this.scenarioName = name;
     this.workflow = "CONTRACT_SET";
     this.phase = { name: "incident", scenarioId: name };
@@ -182,9 +213,12 @@ export class ChangeRoomSession {
   /**
    * Run the full agent reasoning pipeline over the current view for a goal.
    * Blind-safe: returns observable evidence, hypotheses, plans and simulated
-   * (predicted) outcomes — never ground truth.
+   * (predicted) outcomes — never ground truth. After the deterministic pipeline
+   * it best-effort enriches the result with LLM advisory narrative (reasoning
+   * layer only; never gates or decides). Runs in parallel so hot-path latency
+   * is bounded by the model timeout, and never blocks the control loop.
    */
-  reason(goal: string): ReturnType<AgentOrchestrator["reason"]> {
+  async reason(goal: string): Promise<ReturnType<AgentOrchestrator["reason"]>> {
     const runner = this.requireRunner();
     if (this.paused) throw Object.assign(new Error("agent is paused; cannot reason"), { code: "PAUSED" });
     this.lastGoal = goal;
@@ -192,7 +226,16 @@ export class ChangeRoomSession {
     const result = this.orchestrator!.reason(goal, view);
     this.workflow = result.plans.length > 0 ? "PLAN_READY" : "INVESTIGATING";
     this.phase = { name: "reasoned" };
-    this.flight.record({ actor: "agent", type: result.contract ? "intent_contract_set" : "observation", planId: result.plans[0]?.id, inputSummary: goal, resultSummary: `${result.hypotheses.length} hypotheses, ${result.plans.length} plans`, detail: { workflow: this.workflow } });
+    result.advisory = await this.orchestrator!.advise(view, goal);
+    const a = result.advisory;
+    this.flight.record({
+      actor: "agent",
+      type: "observation",
+      planId: result.plans[0]?.id,
+      inputSummary: goal,
+      resultSummary: `${result.hypotheses.length} hypotheses, ${result.plans.length} plans; advisory via ${a.provider}/${a.model} (mock=${a.isMock})`,
+      detail: { workflow: this.workflow, advisoryModel: a.isMock ? "n/a" : `${a.provider}/${a.model}` },
+    });
     return result;
   }
 
@@ -638,6 +681,7 @@ export class ChangeRoomSession {
       plans: last?.plans ?? [],
       simulations: last?.simulations ?? [],
       topHypothesis: last?.topHypothesis ?? null,
+      advisory: last?.advisory,
       selectedPlanId: this.selectedPlanId,
       gate: this.lastGate,
       verification: this.verification.summary(),
@@ -662,7 +706,7 @@ export class ChangeRoomSession {
       }),
       execute: async (name: ToolName, args: Record<string, unknown>) => {
         try {
-          return self.runTool(name, args);
+          return await self.runTool(name, args);
         } catch (err) {
           return { ok: false, error: (err as Error).message };
         }
@@ -677,7 +721,7 @@ export class ChangeRoomSession {
     return plan;
   }
 
-  private runTool(name: ToolName, args: Record<string, unknown>): { ok: boolean; data?: unknown; error?: string } {
+  private async runTool(name: ToolName, args: Record<string, unknown>): Promise<{ ok: boolean; data?: unknown; error?: string }> {
     const runner = this.requireRunner();
 
     // Phase 15 (input validation): reject unknown tool names outright.
@@ -741,8 +785,8 @@ export class ChangeRoomSession {
           return { ok: false, error: `generate_plans requires CONTRACT_SET/INVESTIGATING/DEVIATION/STALE, got ${this.workflow}` };
         }
         const goal = this.lastGoal ?? "restore system health";
-        const result = this.reason(goal);
-        return { ok: true, data: { hypotheses: result.hypotheses, plans: result.plans, topHypothesis: result.topHypothesis } };
+        const result = await this.reason(goal);
+        return { ok: true, data: { hypotheses: result.hypotheses, plans: result.plans, topHypothesis: result.topHypothesis, advisory: result.advisory } };
       }
       case "compare_plans": {
         return { ok: true, data: { plans: this.orchestrator?.last.plans ?? [], simulations: this.orchestrator?.last.simulations ?? [] } };

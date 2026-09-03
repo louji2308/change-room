@@ -23,7 +23,7 @@
  * This file never exposes ground truth to the agent surface.
  */
 
-import type { AgentView } from "@change-room/scenarios";
+import type { AgentView, UndoFrame } from "@change-room/scenarios";
 import type {
   ActionType,
   BusinessKpis,
@@ -58,7 +58,7 @@ export interface WorldSource {
     opts?: { neutralizeDisturbances?: boolean }
   ): { ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" };
   settle(seconds?: number): void;
-  popUndoFrame(): unknown;
+  popUndoFrame(): UndoFrame | undefined;
   rollback(): { ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" };
   session(): { scenarioId: string; startedAt: number; steps: number };
   /** Asynchronously refresh the real telemetry snapshot (live path). */
@@ -227,10 +227,12 @@ export class RealMedusaWorld implements WorldSource {
     this.steps += 1;
   }
 
-  popUndoFrame(): { snapshotId: string; kpis: BusinessKpis } | null {
+  popUndoFrame(): UndoFrame | undefined {
     const f = this.undoFrame;
     this.undoFrame = null;
-    return f;
+    // The real world's undo frame is snapshot-based (StateStore), not the
+    // simulator's tuning/disturbance UndoFrame; rollback() uses its own frame.
+    return undefined;
   }
 
   rollback(): { ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" } {

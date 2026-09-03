@@ -24,7 +24,7 @@ export {
   type AlternativePlan,
 } from "./challenge.js";
 export { decideRecovery, type RecoveryDecision, type RecoveryInput } from "./recovery.js";
-export { AgentOrchestrator, type AgentContext, type AgentReasoningResult } from "./orchestrator.js";
+export { AgentOrchestrator, type AgentContext, type AgentReasoningResult, type AgentAdvisory } from "./orchestrator.js";
 export {
   adversarialChallenge,
   type AdversarialChallengeOptions,
