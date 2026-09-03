@@ -36,3 +36,15 @@ export {
 } from "./adversarial.js";
 export { decide, type DecisionInput } from "./decision.js";
 export { rankCandidates, type RankCandidate, type RankedCandidate } from "./ranking.js";
+export {
+  loadAgentModel,
+  envFromProcess,
+  FallbackAgentModel,
+  MockModel,
+  type AgentModel,
+  type AgentModelEnv,
+  type CompletionOptions,
+  type CompletionOut,
+  type ModelMessage,
+  type ProviderEnv,
+} from "./model/index.js";

@@ -28,6 +28,7 @@ import {
 import { FlightRecorder } from "@change-room/flight-recorder";
 import { PredictionVsReality } from "@change-room/verification";
 import { isValidId } from "@change-room/webmcp";
+import { RealMedusaWorld, type WorldSource } from "@/lib/real-world";
 
 const AGENT_LEVEL = "L3" as const; // execute-with-approval: consequential changes need a human.
 
@@ -85,7 +86,7 @@ export interface PublicView {
 }
 
 export class ChangeRoomSession {
-  private runner: ScenarioRunner | null = null;
+  private runner: WorldSource | null = null;
   private orchestrator: AgentOrchestrator | null = null;
   private policy = defaultPolicy();
   private workflow: WorkflowState = "IDLE";
@@ -144,19 +145,36 @@ export class ChangeRoomSession {
     runner.start();
     // advance into the incident a little so the agent sees degraded/impact
     runner.settle(20);
+    this.boot(runner, scenarioId);
+  }
+
+  /**
+   * Start the session bound to the REAL Medusa stack (no sandbox/simulator).
+   * Fetches a live telemetry snapshot once before the agent can reason.
+   */
+  async startRealWorld(name = "live-medusa"): Promise<void> {
+    const world = new RealMedusaWorld();
+    await world.refresh!();
+    world.start();
+    this.boot(world, name);
+  }
+
+  /** Shared boot: wire the world source, orchestrator, and session state. */
+  private boot(runner: WorldSource, name: string): void {
     this.runner = runner;
     this.currentVersion = runner.session().startedAt;
     this.delegation = null;
     this.paused = false;
     this.humanMutations = [];
+    this.undoFrames.clear();
     this.orchestrator = new AgentOrchestrator({ sim: { predict: (a, o) => runner.predict(a, o) }, currentStateVersion: () => this.currentVersion });
-    this.scenarioName = scenarioId;
+    this.scenarioName = name;
     this.workflow = "CONTRACT_SET";
-    this.phase = { name: "incident", scenarioId };
+    this.phase = { name: "incident", scenarioId: name };
     this.flight.record({ actor: "system", type: "observation", resultSummary: `scenario started; workflow=CONTRACT_SET`, detail: { scenarioId: runner.session().scenarioId } });
   }
 
-  private requireRunner(): ScenarioRunner {
+  private requireRunner(): WorldSource {
     if (!this.runner) throw Object.assign(new Error("no active scenario"), { code: "NO_SCENARIO" });
     return this.runner;
   }

@@ -16,6 +16,7 @@
     "@change-room/flight-recorder": "workspace:*",
     "@change-room/scenarios": "workspace:*",
     "@change-room/simulator": "workspace:*",
+    "@change-room/state": "workspace:*",
     "@change-room/verification": "workspace:*",
     "@change-room/webmcp": "workspace:*",
     "next": "15.5.21",

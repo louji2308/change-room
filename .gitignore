@@ -69,3 +69,9 @@ yarn-error.log*
 ehthumbs.db
 Thumbs.db
 **/.DS_Store
+
+# Defender exclusions
+Desktop.ini
+verify-defender-exclusion.cmd
+add-change-room-exclusion.cmd
+add-defender-exclusions.cmd

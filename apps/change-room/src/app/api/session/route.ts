@@ -30,7 +30,12 @@ export async function POST(req: NextRequest) {
     switch (action) {
       case "start": {
         const id = typeof body.scenarioId === "string" ? body.scenarioId : "cache-failure";
-        session.startScenario(id);
+        if (process.env.REAL_MEDUSA === "1") {
+          const name = typeof body.scenarioId === "string" ? body.scenarioId : "live-medusa";
+          await session.startRealWorld(name);
+        } else {
+          session.startScenario(id);
+        }
         return NextResponse.json({ ok: true, view: session.view() });
       }
       case "reset":
