@@ -35,3 +35,42 @@ export type { MetricSeries, BusinessKpis, ObservableEvent, ObservableLog } from 
 
 export { WorldSimulator } from "./simulator.js";
 export type { SimulatorOptions } from "./simulator.js";
+
+// V2 — Environment & Living World (§6.2)
+export {
+  computeEnvMultipliers,
+  generateBaselineConditions,
+  zeroMultipliers,
+} from "./environment/conditions.js";
+export type {
+  EnvironmentCondition,
+  EnvironmentConditionKind,
+  EnvMultipliers,
+} from "./environment/conditions.js";
+
+export { LivingWorld } from "./environment/living.js";
+export type { LivingWorldOptions, AdvanceResult } from "./environment/living.js";
+
+export {
+  generateEnvironmentEvents,
+  applyEnvironmentEvent,
+  EnvironmentStream,
+} from "./environment/environment-stream.js";
+export type {
+  EnvironmentEvent,
+  EnvironmentEventKind,
+} from "./environment/environment-stream.js";
+
+// V2 — World Generator (§7)
+export { generateWorld } from "./world-generator.js";
+export type { WorldGeneratorOpts, GeneratedWorld } from "./world-generator.js";
+
+// V2 — Plan Simulation / Branch Manager (§8)
+export { simulatePlan, compareBranches } from "./plan-simulation/branch-manager.js";
+export type {
+  SimulatePlanOpts,
+  SimulatePlanResult,
+  LocalWorldSnapshot,
+  LocalWorldBranch,
+  BranchComparison,
+} from "./plan-simulation/branch-manager.js";

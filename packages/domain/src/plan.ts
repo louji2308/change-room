@@ -10,6 +10,7 @@
 
 import type { ActionType } from "@change-room/simulator";
 import type { RiskAssessment } from "./risk.js";
+import type { DecisionConfidence } from "./v2-confidence.js";
 
 export type PlanStatus =
   | "DRAFT"
@@ -71,6 +72,31 @@ export interface Plan {
   /** Do-nothing counterfactual flag. */
   isDoNothing?: boolean;
   createdAt: number;
+
+  // ── V2 lifecycle links ──────────────────────────────────────────────
+
+  /** World revision this plan was built against. */
+  sourceWorldRevision?: number;
+  /** Candidate futures from simulation, each referencing a branch. */
+  candidateFutures?: Array<{ branchId: string; predictedActionSequence: string[] }>;
+  /** Aggregate challenge / robustness results. */
+  robustness?: {
+    challengedWorlds: number;
+    successful: number;
+    partialFailures: number;
+    failures: number;
+    confidence: number;
+    boundaries: string[];
+  };
+  /** Predicted end-state KPIs from simulation. */
+  predictedMetrics?: Record<string, number>;
+  /** Post-execution reality capture. */
+  actualOutcome?: {
+    directedTo: "verify" | "reinvestigate" | "recovered";
+    predictionError?: number;
+  };
+  /** Multi-dimensional decision confidence from the agent. */
+  decisionConfidence?: DecisionConfidence;
 }
 
 export function createPlan(partial: Partial<Plan> & Pick<Plan, "name" | "objective" | "actions" | "stateVersion">): Plan {
@@ -94,5 +120,11 @@ export function createPlan(partial: Partial<Plan> & Pick<Plan, "name" | "objecti
     status: partial.status ?? "DRAFT",
     isDoNothing: partial.isDoNothing ?? false,
     createdAt: partial.createdAt ?? Date.now(),
+    sourceWorldRevision: partial.sourceWorldRevision,
+    candidateFutures: partial.candidateFutures,
+    robustness: partial.robustness,
+    predictedMetrics: partial.predictedMetrics,
+    actualOutcome: partial.actualOutcome,
+    decisionConfidence: partial.decisionConfidence,
   };
 }

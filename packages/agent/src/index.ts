@@ -25,3 +25,14 @@ export {
 } from "./challenge.js";
 export { decideRecovery, type RecoveryDecision, type RecoveryInput } from "./recovery.js";
 export { AgentOrchestrator, type AgentContext, type AgentReasoningResult } from "./orchestrator.js";
+export {
+  adversarialChallenge,
+  type AdversarialChallengeOptions,
+  type AdversarialChallengeResult,
+  type ChallengedWorld,
+  type FutureDriver,
+  type FutureOutcome,
+  type Perturbation,
+} from "./adversarial.js";
+export { decide, type DecisionInput } from "./decision.js";
+export { rankCandidates, type RankCandidate, type RankedCandidate } from "./ranking.js";

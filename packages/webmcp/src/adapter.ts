@@ -8,7 +8,7 @@
  */
 
 import type { ToolDefinition } from "./tools.js";
-import { TOOLS } from "./tools.js";
+import { ALL_TOOLS } from "./tools.js";
 import type { WebmcpRegistry } from "./registry.js";
 
 /** Minimal shape of the WebMCP host API. */
@@ -43,7 +43,7 @@ export async function registerWithWebmcp(registry: WebmcpRegistry): Promise<stri
   if (!h || typeof h.registerTool !== "function") return [];
 
   const registered: string[] = [];
-  const defs: ToolDefinition[] = TOOLS;
+  const defs: ToolDefinition[] = ALL_TOOLS;
   for (const def of defs) {
     try {
       await h.registerTool({

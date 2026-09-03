@@ -17,3 +17,6 @@ export * from "./workflow.js";
 export * from "./decision.js";
 export * from "./tool-descriptor.js";
 export * from "./observation.js";
+export * from "./v2-world.js";
+export * from "./v2-confidence.js";
+export * from "./v2-decision.js";

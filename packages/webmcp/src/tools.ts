@@ -10,11 +10,35 @@
 import type { ToolDescriptor, ToolName, WorkflowState } from "@change-room/domain";
 import { canToolInState } from "@change-room/domain";
 
+/** V2 tool names are now part of the canonical domain ToolName union. */
+export type V2ToolName = "abstain" | "inspect_decision_memory" | "test_robustness";
+
+/** Combined tool name covering all V1 and V2 tools (== ToolName). */
+export type WebmcpToolName = ToolName;
+
+/** Enriched context for dynamic tool availability beyond static workflow state. */
+export interface ToolContext {
+  workflow?: WorkflowState;
+  intent?: unknown;
+  worldState?: unknown;
+  authority?: "L0" | "L1" | "L2" | "L3" | "L4";
+  risk?: { overall: "low" | "medium" | "high"; [k: string]: unknown };
+  confidence?: Record<string, number>;
+  autonomy?: { level: string; [k: string]: unknown };
+}
+
 export interface ToolDefinition extends ToolDescriptor {
+  name: WebmcpToolName;
   /** Workflow states in which this tool may be invoked. */
   states: WorkflowState[];
   /** Parent group for documentation/organization. */
   group: "observation" | "decision" | "control" | "action" | "verification";
+  /**
+   * Optional dynamic availability check. When present, a tool is available
+   * only when BOTH the static state check AND this function return true.
+   * This enables authority/risk/confidence/autonomy gating (§15.1).
+   */
+  available?: (ctx: ToolContext) => boolean;
 }
 
 export const TOOL_NAMES: ToolName[] = [
@@ -149,14 +173,79 @@ export const TOOLS: ToolDefinition[] = [
   },
 ];
 
-/** Get a tool definition by name. */
-export function getTool(name: ToolName): ToolDefinition | undefined {
-  return TOOLS.find((t) => t.name === name);
+// ── V2 tools (implementation-v2.md §15.2 §15.3) ──────────────────────
+
+export const V2_TOOL_NAMES: V2ToolName[] = [
+  "abstain",
+  "inspect_decision_memory",
+  "test_robustness",
+];
+
+const AUTHORITY_RANK: Record<string, number> = { L0: 0, L1: 1, L2: 2, L3: 3, L4: 4 };
+
+function authoritySufficient(required: "L0" | "L1" | "L2" | "L3" | "L4", ctx: ToolContext): boolean {
+  if (!ctx.authority) return true; // no authority context → backward-compatible pass
+  return (AUTHORITY_RANK[ctx.authority] ?? 0) >= AUTHORITY_RANK[required];
 }
 
-/** Whether a tool is invocable in a given workflow state. */
-export function toolAvailableInState(name: ToolName, state: WorkflowState): boolean {
+export const V2_TOOLS: ToolDefinition[] = [
+  {
+    name: "abstain",
+    description: "Explicitly abstain from a decision when evidence, robustness, or authority is insufficient. Returns the abstention as a structured AgentDecision.",
+    inputSchema: {
+      type: "object",
+      properties: { reason: { type: "string", description: "Why the agent is abstaining" } },
+      required: ["reason"],
+      additionalProperties: false,
+    },
+    readOnly: true,
+    group: "decision",
+    states: ["CONTRACT_SET", "INVESTIGATING", "PLAN_READY", "SIMULATED", "DEVIATION"],
+  },
+  {
+    name: "inspect_decision_memory",
+    description: "Read recent decision-memory record metadata. Returns past decision outcomes, prediction errors, and lessons for context. Read-only.",
+    inputSchema: {
+      type: "object",
+      properties: { limit: { type: "integer", description: "Max records to return (default 10)" } },
+      required: [],
+      additionalProperties: false,
+    },
+    readOnly: true,
+    group: "observation",
+    states: ["CONTRACT_SET", "INVESTIGATING", "PLAN_READY", "SIMULATED", "WAITING_FOR_APPROVAL", "APPROVED", "EXECUTED", "VERIFYING", "DEVIATION", "RECOVERING", "COMPLETE"],
+  },
+  {
+    name: "test_robustness",
+    description: "Run adversarial robustness challenge against a plan: find failure boundaries, measure resilience, and return structured robustness metrics. Read-only.",
+    inputSchema: {
+      type: "object",
+      properties: { planId: { type: "string", description: "ID of the plan to challenge for robustness" } },
+      required: ["planId"],
+      additionalProperties: false,
+    },
+    readOnly: true,
+    group: "decision",
+    states: ["PLAN_READY", "SIMULATED", "DEVIATION"],
+    available: (ctx) => authoritySufficient("L2", ctx),
+  },
+];
+
+/** Get a tool definition by name. */
+export function getTool(name: WebmcpToolName): ToolDefinition | undefined {
+  return ALL_TOOLS.find((t) => t.name === name);
+}
+
+/** Whether a tool is invocable in a given workflow state (static check only). */
+export function toolAvailableInState(name: WebmcpToolName, state: WorkflowState): boolean {
   const def = getTool(name);
   if (!def) return false;
-  return canToolInState(state, name);
+  if (V2_TOOL_NAMES.includes(name as V2ToolName)) {
+    return def.states.includes(state);
+  }
+  return canToolInState(state, name as ToolName);
 }
+
+/** Combined V1 + V2 tools. */
+export const ALL_TOOLS: ToolDefinition[] = [...TOOLS, ...V2_TOOLS];
+export const ALL_TOOL_NAMES: WebmcpToolName[] = [...TOOL_NAMES, ...V2_TOOL_NAMES];

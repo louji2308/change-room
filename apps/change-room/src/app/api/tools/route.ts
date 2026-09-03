@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { WebmcpRegistry, TOOLS } from "@change-room/webmcp";
+import { WebmcpRegistry, ALL_TOOL_NAMES } from "@change-room/webmcp";
 import type { ToolName } from "@change-room/domain";
 import { getSession } from "@/lib/session";
 
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid JSON body" }, { status: 400 });
   }
   const name = body.name as ToolName;
-  if (!name || !TOOLS.some((t) => t.name === name)) {
+  if (!name || !ALL_TOOL_NAMES.includes(name)) {
     return NextResponse.json({ ok: false, error: `unknown tool: ${name}` }, { status: 400 });
   }
   const registry = new WebmcpRegistry(session.asToolRuntime);

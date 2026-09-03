@@ -222,6 +222,8 @@ The adapter is a best-effort read: if the API is unreachable it falls back to a 
 
 WebMCP is not the product — it is the mechanism through which the web application exposes meaningful capabilities to an AI agent. Change Room registers a small, state-aware semantic tool surface (14 tools) that an agent uses to observe, decide, and act with bounded authority. Every mutation passes through the Change Control layer; nothing agent-facing ever returns hidden ground truth.
 
+Tool registration is spec-compliant: each tool's `inputSchema` is a standard JSON Schema object (`type: "object"`, `properties`, `required`, `additionalProperties: false`), `registerTool()` is awaited (it returns `Promise<void>` per the WebMCP spec), and the `execute` callback receives `(input, { signal })` with an `AbortSignal`.
+
 Quick overview:
 
 - **In-browser agents:** open the Change Room app in a WebMCP-capable browser. `apps/change-room/src/components/WebMCP.tsx` feature-detects `document.modelContext` and registers all tools; each tool forwards `execute` to `POST /api/tools`. A `toolchange` event is emitted whenever the workflow state changes (so availability follows state).
@@ -272,6 +274,8 @@ Other root scripts: `pnpm build` (build all packages and apps — note the store
 ## Status
 
 Implemented so far (see `Project/Progress.md` for the authoritative phase tracker): Phases 0–12 are ✅ complete — state model, simulator, scenario engine, Change Room UI, change control, agent orchestration, WebMCP, the connected workflow, prediction-vs-reality, recovery/rollback, flight recorder, and bounded delegation + human takeover.
+
+**Control layer hardening (landed):** the intent contract now carries machine-readable `forbiddenActionTypes` / `forbiddenResources` that the policy engine actually enforces (previously natural-language strings never matched action identifiers); the gate is re-evaluated at execution time against live world state (not just at submit); and rollback uses the scenario engine's exact `UndoFrame` snapshot instead of an incomplete inverse-op map.
 
 > **Verification note:** `pnpm test` (all suites), `pnpm install --frozen-lockfile`, and `pnpm -r --filter "@change-room/*" build` were run against this tree; `pnpm --filter @change-room/app typecheck` and `pnpm --filter @change-room/state test` were also verified.
 

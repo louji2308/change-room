@@ -36,6 +36,7 @@ coverage
 
 # Internal audit / flaw tracking (never commit)
 implementation-flaws.md
+implementation-v2.md
 
 # NUL
 NUL

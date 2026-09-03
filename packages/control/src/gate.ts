@@ -1,11 +1,14 @@
 /**
- * Operation gate (Implementation.md §5, the canonical control boundary).
+ * Operation gate (Implementation.md §5, §14).
  *
- * Every consequential operation (execute_change, rollback_change, ...) must
- * pass through this single gate. It composes: policy -> risk -> stale-plan
- * validation -> conflict detection -> authority decision -> permission check.
- * Nothing bypasses it; the gate is the authoritative answer for "may this
- * operation proceed right now?"
+ * Two distinct verdicts (§14.1):
+ *  - **Prepare** — is the plan structurally valid and safe to PRESENT?
+ *    (policy + risk + permission + authority).  Backward-compatible via
+ *    `evaluateGate` and explicit `prepareGate`.
+ *  - **Execute** — is the plan still valid, authorized, non-stale, within risk
+ *    budget, and executable against the CURRENT world AT THIS MOMENT?
+ *    Via `reevaluateForExecution` which re-runs the full sequence at execution
+ *    time including a current-revision freshness re-check and budget check.
  */
 
 import { PolicyEngine, type PolicyResult } from "./policy.js";
@@ -14,6 +17,7 @@ import { checkPermission, type PermissionContext } from "./permissions.js";
 import { decideAuthority, type AuthorityInput, type DelegationGrant } from "./authority.js";
 import { validatePlanFreshness } from "./stale-plan.js";
 import { detectConflicts, type StateMutation } from "./conflict.js";
+import type { AutonomyEngine } from "./autonomy.js";
 import type { Plan, IntentContract } from "@change-room/domain";
 
 export interface GateContext {
@@ -29,7 +33,7 @@ export interface GateContext {
 
 export type GateDecision = {
   allowed: boolean;
-  stage: "policy" | "risk" | "freshness" | "conflict" | "permission" | "authority";
+  stage: "policy" | "risk" | "freshness" | "conflict" | "permission" | "authority" | "budget";
   reason: string;
   approvalRequired: boolean;
   policy: PolicyResult;
@@ -38,16 +42,63 @@ export type GateDecision = {
 };
 
 /**
- * Evaluate whether `plan` may be executed right now given the current state and
- * actor context. Pure and deterministic — no side effects.
+ * Minimal structural budget interface, satisfied by both `RiskBudget` and
+ * `RiskBudgetManager`.  Keeps the gate decoupled from any single budget type.
  */
+export interface RiskBudgetLike {
+  canAfford(actionType: string): boolean;
+  remaining(): number;
+}
+
+export function prepareGate(ctx: GateContext, policy: PolicyEngine): GateDecision {
+  return runSequence(ctx, policy, { checkFreshness: false, checkBudget: false, budget: undefined });
+}
+
+export function reevaluateForExecution(
+  ctx: GateContext,
+  policy: PolicyEngine,
+  budget?: RiskBudgetLike,
+  autonomy?: AutonomyEngine,
+  worldFingerprint?: { expected?: string; current?: string }
+): GateDecision {
+  return runSequence(ctx, policy, { checkFreshness: true, checkBudget: true, budget, autonomy, worldFingerprint });
+}
+
+export function gatePair(
+  ctx: GateContext,
+  policy: PolicyEngine,
+  budget?: RiskBudgetLike,
+  autonomy?: AutonomyEngine,
+  worldFingerprint?: { expected?: string; current?: string }
+): { prepare: GateDecision; execute: GateDecision } {
+  return {
+    prepare: prepareGate(ctx, policy),
+    execute: reevaluateForExecution(ctx, policy, budget, autonomy, worldFingerprint),
+  };
+}
+
 export function evaluateGate(ctx: GateContext, policy: PolicyEngine): GateDecision {
-  // 1) Policy: is the action allowed/forbidden/approval-required?
+  return runSequence(ctx, policy, { checkFreshness: true, checkBudget: false, budget: undefined });
+}
+
+function runSequence(
+  ctx: GateContext,
+  policy: PolicyEngine,
+  opts: {
+    checkFreshness: boolean;
+    checkBudget: boolean;
+    budget?: RiskBudgetLike;
+    autonomy?: AutonomyEngine;
+    worldFingerprint?: { expected?: string; current?: string };
+  }
+): GateDecision {
   const policyResult = policy.evaluate(
     {
       actionType: ctx.plan.actions[0]?.type ?? "do_nothing",
       resources: ctx.plan.actions.flatMap((a) => resourcesForAction(a.type)),
-      reversible: ctx.plan.reversibility === "fully-reversible" || ctx.plan.reversibility === "partially-reversible",
+      reversible:
+        ctx.plan.reversibility === "fully-reversible" ||
+        ctx.plan.reversibility === "partially-reversible",
       risk: ctx.plan.risk.overall,
     },
     ctx.intentContract
@@ -57,7 +108,6 @@ export function evaluateGate(ctx: GateContext, policy: PolicyEngine): GateDecisi
     return gate("policy", false, policyResult.reason, true, policyResult, ctx, denyRisk);
   }
 
-  // 2) Risk assessment.
   const risk = assessRisk({
     affected: ctx.plan.actions.flatMap((a) => resourcesForAction(a.type)),
     reversibility: ctx.plan.reversibility,
@@ -67,19 +117,50 @@ export function evaluateGate(ctx: GateContext, policy: PolicyEngine): GateDecisi
     ...ctx.riskOverrides,
   });
 
-  // 3) Stale-plan validation.
-  const fresh = validatePlanFreshness(ctx.plan.stateVersion, ctx.currentStateVersion);
-  if (!fresh.ok) {
-    return gate("freshness", false, fresh.reason, true, policyResult, ctx, risk, { planVersion: ctx.plan.stateVersion, currentVersion: ctx.currentStateVersion });
+  if (opts.checkFreshness) {
+    const fresh = validatePlanFreshness(ctx.plan.stateVersion, ctx.currentStateVersion);
+    if (!fresh.ok) {
+      return gate("freshness", false, fresh.reason, true, policyResult, ctx, risk, {
+        planVersion: ctx.plan.stateVersion,
+        currentVersion: ctx.currentStateVersion,
+      });
+    }
   }
 
-  // 4) Conflict detection.
   const conflict = detectConflicts(ctx.plan, ctx.mutationsSince ?? [], ctx.currentStateVersion);
   if (conflict.conflicted) {
-    return gate("conflict", false, conflict.conflicts[0].reason, true, policyResult, ctx, risk, { conflicts: conflict.conflicts });
+    return gate("conflict", false, conflict.conflicts[0].reason, true, policyResult, ctx, risk, {
+      conflicts: conflict.conflicts,
+    });
   }
 
-  // 5) Permission + authority.
+  if (opts.checkBudget && opts.budget) {
+    const actionType = ctx.plan.actions[0]?.type ?? "do_nothing";
+    if (!opts.budget.canAfford(actionType)) {
+      const remaining = opts.budget.remaining();
+      return gate("budget", false, `risk budget exhausted for action '${actionType}' (remaining ${remaining})`, true, policyResult, ctx, risk, { budgetRemaining: remaining });
+    }
+  }
+
+  if (opts.autonomy) {
+    const actionType = ctx.plan.actions[0]?.type ?? "do_nothing";
+    const perm = opts.autonomy.canPerform(actionType, risk.overall);
+    if (!perm.allowed) {
+      return gate("authority", false, perm.reason, true, policyResult, ctx, risk, {
+        autonomyLevel: opts.autonomy.getState().level,
+      });
+    }
+  }
+
+  if (opts.worldFingerprint?.expected && opts.worldFingerprint?.current) {
+    if (opts.worldFingerprint.expected !== opts.worldFingerprint.current) {
+      return gate("freshness", false, "world fingerprint mismatch at execution time", true, policyResult, ctx, risk, {
+        expected: opts.worldFingerprint.expected,
+        actual: opts.worldFingerprint.current,
+      });
+    }
+  }
+
   const permission = checkPermission(ctx.permission, "execute_change");
   if (!permission.ok) {
     return gate("permission", false, permission.reason, true, policyResult, ctx, risk);
@@ -87,6 +168,7 @@ export function evaluateGate(ctx: GateContext, policy: PolicyEngine): GateDecisi
 
   const authority = decideAuthority({
     agentLevel: ctx.permission.level,
+    actionType: ctx.plan.actions[0]?.type ?? "do_nothing",
     risk,
     reversible: risk.reversible,
     affected: ctx.plan.actions.flatMap((a) => resourcesForAction(a.type)),

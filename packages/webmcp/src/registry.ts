@@ -8,13 +8,19 @@
  */
 
 import type { ToolName, WorkflowState, JsonSchemaField, JsonSchemaObject } from "@change-room/domain";
-import { TOOLS, getTool, toolAvailableInState, type ToolDefinition } from "./tools.js";
+import { ALL_TOOLS, TOOLS, getTool, toolAvailableInState, type ToolContext, type ToolDefinition, type WebmcpToolName } from "./tools.js";
 import { classifyContent, isTrustedAsInstruction, type ContentClass } from "./security.js";
 
 /** Implemented by the Change Room application host. */
 export interface ToolRuntime {
   /** Current workflow state used for capability gating. */
   workflowState(): WorkflowState;
+  /**
+   * Optional dynamic context for §15.1 dynamic exposure (intent, world state,
+   * authority, risk, confidence, autonomy). When present, tool availability is
+   * the AND of the static state check and the tool's `available(ctx)` gate.
+   */
+  context?(): ToolContext;
   /** Execute a tool's application logic. Must never return hidden ground truth. */
   execute(name: ToolName, args: Record<string, unknown>): Promise<{ ok: boolean; data?: unknown; error?: string }>;
 }
@@ -26,26 +32,46 @@ export type InvocationResult =
 export class WebmcpRegistry {
   constructor(private readonly runtime: ToolRuntime) {}
 
-  /** List all tools (for discovery) with their availability in the current state. */
-  discover(): Array<{ name: ToolName; description: string; inputSchema: JsonSchemaObject; readOnly: boolean; group: string; available: boolean }> {
+  /**
+   * Dynamic gating context (§15.1): the runtime-provided context merged with the
+   * authoritative workflow state, so `available(ctx)` never conflicts with it.
+   */
+  private context(): ToolContext {
+    return { workflow: this.runtime.workflowState(), ...(this.runtime.context?.() ?? {}) };
+  }
+
+  /**
+   * Availability = static workflow-state check AND (if present) the dynamic
+   * `available(ctx)` gate (authority/risk/confidence/autonomy).
+   */
+  private dynamicAvailable(def: ToolDefinition, state: WorkflowState): boolean {
+    if (!toolAvailableInState(def.name, state)) return false;
+    if (def.available && !def.available(this.context())) return false;
+    return true;
+  }
+
+  /** List all tools (V1 + V2) with their availability in the current context. */
+  discover(): Array<{ name: WebmcpToolName; description: string; inputSchema: JsonSchemaObject; readOnly: boolean; group: string; available: boolean }> {
     const state = this.runtime.workflowState();
-    return TOOLS.map((t) => ({
+    return ALL_TOOLS.map((t) => ({
       name: t.name,
       description: t.description,
       inputSchema: t.inputSchema,
       readOnly: t.readOnly,
       group: t.group,
-      available: toolAvailableInState(t.name, state),
+      available: this.dynamicAvailable(t, state),
     }));
   }
 
-  /** Whether a tool is currently invocable. */
-  canUse(name: ToolName): boolean {
-    return toolAvailableInState(name, this.runtime.workflowState());
+  /** Whether a tool is currently invocable (static + dynamic gates). */
+  canUse(name: WebmcpToolName): boolean {
+    const def = getTool(name);
+    if (!def) return false;
+    return this.dynamicAvailable(def, this.runtime.workflowState());
   }
 
   /** Validate raw args against a tool's input schema. */
-  validate(name: ToolName, args: unknown): { ok: true; value: Record<string, unknown> } | { ok: false; errors: string[] } {
+  validate(name: WebmcpToolName, args: unknown): { ok: true; value: Record<string, unknown> } | { ok: false; errors: string[] } {
     const def = getTool(name);
     if (!def) return { ok: false, errors: [`unknown tool: ${name}`] };
     if (typeof args !== "object" || args === null || Array.isArray(args)) {
@@ -89,12 +115,12 @@ export class WebmcpRegistry {
    * Invoke a tool with enforcement: state availability + read-only + schema.
    * The runtime handles permission/control for mutations.
    */
-  async invoke(name: ToolName, rawArgs: unknown): Promise<InvocationResult> {
+  async invoke(name: WebmcpToolName, rawArgs: unknown): Promise<InvocationResult> {
     const def = getTool(name);
     if (!def) return { ok: false, error: `unknown tool: ${name}` };
 
-    if (!toolAvailableInState(name, this.runtime.workflowState())) {
-      return { ok: false, error: `tool '${name}' is not available in the current workflow state (${this.runtime.workflowState()})` };
+    if (!this.canUse(name)) {
+      return { ok: false, error: `tool '${name}' is not available in the current workflow state/context` };
     }
 
     const v = this.validate(name, rawArgs);
@@ -104,7 +130,7 @@ export class WebmcpRegistry {
 
     // Guard: even if a mutation tool is somehow invoked while the registry
     // thinks it's read-only by definition, never route a read-only mismatch.
-    const res = await this.runtime.execute(name, v.value);
+    const res = await this.runtime.execute(name as ToolName, v.value);
     if (!res.ok) return { ok: false, error: res.error ?? "tool execution failed" };
     return { ok: true, data: res.data };
   }
@@ -142,5 +168,5 @@ function typeMatches(type: JsonSchemaField["type"], value: unknown): boolean {
   }
 }
 
-export { TOOLS, getTool, toolAvailableInState };
-export type { ToolDefinition };
+export { TOOLS, ALL_TOOLS, getTool, toolAvailableInState };
+export type { ToolDefinition, WebmcpToolName };

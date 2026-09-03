@@ -33,6 +33,7 @@ export type ChangeRoomEventType =
   | "delegation_granted"
   | "delegation_expired"
   | "delegation_revoked"
+  | "decision"
   | "incident_complete";
 
 export interface ChangeRoomEvent {

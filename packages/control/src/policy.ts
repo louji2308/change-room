@@ -57,7 +57,7 @@ export class PolicyEngine {
     const matched: string[] = [];
     const forbiddenRoot = contract?.forbidden ?? [];
 
-    // 1) Intent-contract-level forbidden actions.
+    // 1) Intent-contract-level forbidden actions (natural-language display list).
     const forbiddenActionHits = forbiddenRoot.filter((f) => f.toLowerCase() === subject.actionType.toLowerCase());
     if (forbiddenActionHits.length > 0) {
       return {
@@ -66,6 +66,28 @@ export class PolicyEngine {
         approvalRequired: false,
         reason: `forbidden by intent contract: ${forbiddenActionHits.join(", ")}`,
         matchedRules: ["contract.forbidden"],
+      };
+    }
+
+    // 1b) Structured forbidden action types (machine-readable, P0-4).
+    if (contract?.forbiddenActionTypes?.some((t) => t.toLowerCase() === subject.actionType.toLowerCase())) {
+      return {
+        verdict: "forbidden",
+        allowed: false,
+        approvalRequired: false,
+        reason: `forbidden by intent contract: action type ${subject.actionType}`,
+        matchedRules: ["contract.forbiddenActionTypes"],
+      };
+    }
+
+    // 1c) Structured forbidden resources (machine-readable, P0-4).
+    if (contract?.forbiddenResources?.some((r) => subject.resources.includes(r))) {
+      return {
+        verdict: "forbidden",
+        allowed: false,
+        approvalRequired: false,
+        reason: `forbidden by intent contract: resource overlap`,
+        matchedRules: ["contract.forbiddenResources"],
       };
     }
 

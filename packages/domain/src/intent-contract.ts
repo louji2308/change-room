@@ -30,6 +30,10 @@ export interface IntentContract {
   constraints: string[];
   /** Explicitly forbidden operations. */
   forbidden: string[];
+  /** Machine-readable forbidden action types (e.g. "scale_database"). */
+  forbiddenActionTypes: string[];
+  /** Machine-readable forbidden resources (e.g. "database", "inventory"). */
+  forbiddenResources: string[];
   /** Default authority level before human amendment. */
   defaultAuthority: "L0" | "L1" | "L2" | "L3";
   /** Optional bounded delegation override. */
@@ -47,6 +51,8 @@ export function createIntentContract(partial: Partial<IntentContract> & { goal: 
     priorities: partial.priorities ?? ["availability", "safety"],
     constraints: partial.constraints ?? [],
     forbidden: partial.forbidden ?? [],
+    forbiddenActionTypes: partial.forbiddenActionTypes ?? [],
+    forbiddenResources: partial.forbiddenResources ?? [],
     defaultAuthority: partial.defaultAuthority ?? "L0",
     delegation: partial.delegation,
     createdAt: partial.createdAt ?? Date.now(),

@@ -39,6 +39,31 @@ const FORBIDDEN_KEYWORDS: Array<{ pattern: RegExp; value: string }> = [
   { pattern: /irreversible/i, value: "irreversible actions" },
 ];
 
+/**
+ * Map intent keywords to machine-readable action types / resources so the
+ * policy engine can enforce the human's constraints against real action
+ * identifiers (P0-4). The natural-language `forbidden` list is retained only
+ * for display/provenance.
+ */
+function structuredForbidden(goal: string): {
+  forbiddenActionTypes: string[];
+  forbiddenResources: string[];
+} {
+  const forbiddenActionTypes: string[] = [];
+  const forbiddenResources: string[] = [];
+
+  // "schema" → no database/configuration mutation.
+  if (/schema/i.test(goal)) forbiddenResources.push("database", "schema", "configuration");
+  // "no production changes" → forbid deployment/config rollouts.
+  if (/production/i.test(goal)) forbiddenActionTypes.push("rollback_deployment", "change_configuration");
+  // "delete" → no data deletion.
+  if (/delete/i.test(goal)) forbiddenResources.push("inventory");
+  // "irreversible" → no irreversible mutation types.
+  if (/irreversible/i.test(goal)) forbiddenActionTypes.push("rollback_deployment", "scale_database", "change_configuration");
+
+  return { forbiddenActionTypes, forbiddenResources };
+}
+
 /** Parse a human goal statement into a structured intent contract. */
 export function parseIntent(goal: string, extra?: Partial<Pick<IntentContract, "defaultAuthority" | "author">>): IntentContract {
   const priorities: Priority[] = [];
@@ -54,6 +79,7 @@ export function parseIntent(goal: string, extra?: Partial<Pick<IntentContract, "
   }
 
   const forbidden = FORBIDDEN_KEYWORDS.filter((f) => f.pattern.test(goal)).map((f) => f.value);
+  const { forbiddenActionTypes, forbiddenResources } = structuredForbidden(goal);
 
   // A goal that asks to "restore safely" but forbids nothing defaults to low
   // authority; explicit safety language keeps authority low.
@@ -64,6 +90,8 @@ export function parseIntent(goal: string, extra?: Partial<Pick<IntentContract, "
     priorities,
     constraints,
     forbidden,
+    forbiddenActionTypes,
+    forbiddenResources,
     defaultAuthority,
     author: extra?.author ?? "human",
   });

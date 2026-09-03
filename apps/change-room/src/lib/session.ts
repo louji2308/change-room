@@ -14,7 +14,7 @@ import { ScenarioRunner } from "@change-room/scenarios";
 import type { UndoFrame } from "@change-room/scenarios";
 import type { ActionType, BusinessKpis, PredictionResult } from "@change-room/simulator";
 import { metricsOf } from "@change-room/verification";
-import { AgentOrchestrator, challengePlan } from "@change-room/agent";
+import { AgentOrchestrator, challengePlan, type SimulatedPlan } from "@change-room/agent";
 import type { IntentContract, Hypothesis, Plan, ToolName, WorkflowState } from "@change-room/domain";
 import {
   evaluateGate,
@@ -111,6 +111,9 @@ export class ChangeRoomSession {
   private lastGoal: string | null = null;
   /** Most recent human-decision request id (Phase 17). */
   private lastRequestId: string | null = null;
+  /** Decision-memory records (V2 §16): a lightweight provenance log for
+   *  `inspect_decision_memory`. */
+  private decisionMemory: Array<{ id: string; type: string; worldRevision: number; timestamp: number; reason: string }> = [];
 
   /** Scenario the sandbox is running (named scenario id), for admin/debug only. */
   private scenarioName: string | null = null;
@@ -132,6 +135,7 @@ export class ChangeRoomSession {
     this.paused = false;
     this.humanMutations = [];
     this.undoFrames.clear();
+    this.decisionMemory = [];
   }
 
   /** Start a scenario (by its stable scenario-database id) and run to baseline. */
@@ -633,6 +637,11 @@ export class ChangeRoomSession {
     const self = this;
     return {
       workflowState: () => self.workflow,
+      context: () => ({
+        workflow: self.workflow,
+        authority: AGENT_LEVEL,
+        autonomy: { level: AGENT_LEVEL },
+      }),
       execute: async (name: ToolName, args: Record<string, unknown>) => {
         try {
           return self.runTool(name, args);
@@ -663,6 +672,9 @@ export class ChangeRoomSession {
       "compare_plans",
       "simulate_plan",
       "challenge_plan",
+      "test_robustness",
+      "abstain",
+      "inspect_decision_memory",
       "prepare_change",
       "validate_policy",
       "request_human_decision",
@@ -802,6 +814,54 @@ export class ChangeRoomSession {
         if (!res.ok) return { ok: false, error: res.error };
         return { ok: true, data: res.report };
       }
+      case "test_robustness": {
+        if (this.workflow !== "PLAN_READY" && this.workflow !== "SIMULATED" && this.workflow !== "DEVIATION") {
+          return { ok: false, error: `test_robustness requires PLAN_READY/SIMULATED/DEVIATION, got ${this.workflow}` };
+        }
+        const planId = String(args.planId ?? "");
+        if (!isValidId(planId)) {
+          return { ok: false, error: `invalid input: 'planId' is not a valid id` };
+        }
+        const last = this.orchestrator!.last;
+        const plan = last.plans.find((p) => p.id === planId);
+        if (!plan) return { ok: false, error: `unknown plan '${planId}'` };
+        const sims = last.simulations.filter((s) => s.plan.id === planId);
+        return { ok: true, data: championRobustness(plan, sims) };
+      }
+      case "abstain": {
+        const reason = String(args.reason ?? "");
+        this.flight.record({
+          actor: "agent",
+          type: "decision",
+          resultSummary: `agent abstained: ${reason}`,
+          detail: { abstained: true, reason },
+        });
+        this.decisionMemory.push({
+          id: `decision_${++this.requestCounter}`,
+          type: "ABSTAIN",
+          worldRevision: this.currentVersion,
+          timestamp: Date.now(),
+          reason,
+        });
+        return {
+          ok: true,
+          data: {
+            abstained: true,
+            reason,
+            worldRevision: this.currentVersion,
+            confidence: null,
+            type: "ABSTAIN",
+          },
+        };
+      }
+      case "inspect_decision_memory": {
+        const limit = args.limit === undefined ? 10 : Number(args.limit);
+        if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+          return { ok: false, error: "invalid input: 'limit' must be an integer in [1, 1000]" };
+        }
+        const records = this.decisionMemory.slice(-limit);
+        return { ok: true, data: { records } };
+      }
       default:
         return { ok: false, error: `tool '${name}' not implemented in this runtime` };
     }
@@ -826,6 +886,43 @@ function humanLabel(s: WorkflowState): string {
     STALE: "Plan stale — state changed",
   };
   return m[s];
+}
+
+/**
+ * V2 §15 robustness test — derive an adversarial robustness profile for a plan
+ * deterministically from that plan's real simulated branch predictions (never
+ * from hardcoded values): report success/error/latency per action and how far
+ * the worst action sits from the operational failure threshold.
+ */
+function championRobustness(plan: Plan, sims: SimulatedPlan[]): Record<string, unknown> {
+  const steps = sims.map((s) => {
+    const successRate = s.prediction?.kpis.checkoutSuccessRate ?? 0;
+    const errorRate = s.prediction?.kpis.checkoutErrorRate ?? 0;
+    const latencyMs = s.prediction?.kpis.checkoutLatencyMs ?? 0;
+    return {
+      actionType: s.actionType,
+      checkoutSuccessRate: Math.round(successRate * 10) / 10,
+      checkoutErrorRate: Math.round(errorRate * 10) / 10,
+      checkoutLatencyMs: Math.round(latencyMs),
+      passes: successRate >= 95 && errorRate <= 5,
+    };
+  });
+  const passes = steps.filter((s) => s.passes).length;
+  const margin = steps.length
+    ? Math.min(...steps.map((s) => s.checkoutSuccessRate - 50))
+    : 0;
+  return {
+    planId: plan.id,
+    steps,
+    challengedSteps: steps.length,
+    passingSteps: passes,
+    robustness: steps.length ? Math.round((passes / steps.length) * 100) / 100 : 0,
+    marginToFailure: Math.round(margin * 10) / 10,
+    summary:
+      steps.length === 0
+        ? `plan ${plan.id} has no simulated branches; robustness unknown`
+        : `plan ${plan.id}: ${passes}/${steps.length} actions hold checkout success >=95% and error <=5% (robustness ${((passes / steps.length) * 100).toFixed(0)}%)`,
+  };
 }
 
 /** Map an action type to the resource(s) it primarily touches (for conflict tracking). */

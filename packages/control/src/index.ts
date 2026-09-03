@@ -15,3 +15,6 @@ export * from "./authority.js";
 export * from "./stale-plan.js";
 export * from "./conflict.js";
 export * from "./gate.js";
+export * from "./autonomy.js";
+export { RiskBudget, type RiskBudgetOptions, type ActionCostMap } from "./risk-budget.js";
+export * from "./budget.js";

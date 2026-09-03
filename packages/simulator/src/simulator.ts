@@ -24,6 +24,11 @@ import type { BranchOptions, PredictionResult } from "./prediction/branch.js";
 import { observeMetrics, observeKpis, eventToLog } from "./observability/observe.js";
 import type { MetricSeries, BusinessKpis, ObservableEvent, ObservableLog } from "./observability/observe.js";
 import type { Action } from "./actions/definitions.js";
+import {
+  generateBaselineConditions,
+  computeEnvMultipliers,
+} from "./environment/conditions.js";
+import type { EnvironmentCondition, EnvMultipliers } from "./environment/conditions.js";
 
 export interface SimulatorOptions {
   seed: number;
@@ -34,6 +39,8 @@ export interface SimulatorOptions {
   disturbances?: Disturbance[];
   /** "demo" uses the canonical cache-degradation signature scenario. */
   scenario?: "demo" | "random";
+  /** Optional environmental conditions for living-world evolution. */
+  conditions?: EnvironmentCondition[];
 }
 
 export class WorldSimulator {
@@ -43,6 +50,7 @@ export class WorldSimulator {
   readonly disturbances: Disturbance[];
   readonly clock: SimulationClock;
   readonly tickSeconds: number;
+  readonly conditions: EnvironmentCondition[];
 
   private events: ObservableEvent[] = [];
   private incidentStarted = false;
@@ -52,6 +60,7 @@ export class WorldSimulator {
     this.tickSeconds = opts.tickSeconds ?? 1;
     this.world = new WorldState(TOPOLOGY.map((c) => c.id));
     this.baseTuning = defaultTuning(opts.trafficLevel ?? 1500);
+    this.conditions = opts.conditions ?? generateBaselineConditions(opts.seed);
     if (opts.disturbances) {
       this.disturbances = opts.disturbances;
     } else if (opts.scenario === "demo") {
@@ -105,6 +114,65 @@ export class WorldSimulator {
       if (fp === prev) break;
       prev = fp;
     }
+  }
+
+  /**
+   * Advance the living world by `ticks` steps (or until `until` time).
+   * Unlike `step()`, this method merges environment-condition multipliers into
+   * the tuning before each tick, so the world degrades WITHOUT a named incident.
+   * §6.2 continuous world evolution.
+   */
+  advance(
+    ticks?: number,
+    until?: number
+  ): {
+    ticksAdvanced: number;
+    currentTime: number;
+    kpis: BusinessKpis;
+    envMultipliers: EnvMultipliers;
+  } {
+    const maxTicks = ticks ?? 1;
+    let advanced = 0;
+
+    for (let i = 0; i < maxTicks; i++) {
+      if (until !== undefined && this.clock.now >= until) break;
+
+      this.clock.advance(this.tickSeconds);
+      const time = this.clock.now;
+
+      // Base tuning merged with named disturbances.
+      let tuning = computeTuningAt(this.baseTuning, this.disturbances, time);
+
+      // Merge in environment-condition multipliers.
+      const env = computeEnvMultipliers(this.conditions, time);
+      tuning.trafficLevel = Math.round(tuning.trafficLevel * env.trafficScale);
+      tuning.capacityMultiplier.cache =
+        (tuning.capacityMultiplier.cache ?? 1) * env.cacheCapacityScale;
+      tuning.capacityMultiplier.database =
+        (tuning.capacityMultiplier.database ?? 1) * env.dbCapacityScale;
+      tuning.capacityMultiplier.queue =
+        (tuning.capacityMultiplier.queue ?? 1) * env.queueCapacityScale;
+      tuning.capacityMultiplier["api-gateway"] =
+        (tuning.capacityMultiplier["api-gateway"] ?? 1) * env.gatewayCapacityScale;
+      tuning.latencyModifier.payment =
+        (tuning.latencyModifier.payment ?? 0) + env.paymentLatencyMs;
+      tuning.latencyModifier.database =
+        (tuning.latencyModifier.database ?? 0) + env.databaseLatencyMs;
+      tuning.latencyModifier["api-gateway"] =
+        (tuning.latencyModifier["api-gateway"] ?? 0) + env.gatewayLatencyMs;
+
+      tick(this.world, tuning, this.tickSeconds, (type, componentId, data) => {
+        this.emit(type, componentId, data);
+      });
+      advanced++;
+    }
+
+    return {
+      ticksAdvanced: advanced,
+      currentTime: this.clock.now,
+      kpis: observeKpis(this.world),
+      envMultipliers: computeEnvMultipliers(this.conditions, this.clock.now),
+    };
   }
 
   /** Current observability (metrics + KPIs + logs + events). */

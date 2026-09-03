@@ -9,3 +9,6 @@
 
 export * from "./verdict.js";
 export * from "./store.js";
+export * from "./prediction-error.js";
+export * from "./outcome-analysis.js";
+export * from "./lesson-extractor.js";

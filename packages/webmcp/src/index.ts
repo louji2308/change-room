@@ -7,8 +7,8 @@
  * Control boundary.
  */
 
-export { TOOLS, TOOL_NAMES, getTool, toolAvailableInState } from "./tools.js";
-export type { ToolDefinition } from "./tools.js";
+export { TOOLS, TOOL_NAMES, ALL_TOOLS, ALL_TOOL_NAMES, V2_TOOLS, V2_TOOL_NAMES, getTool, toolAvailableInState } from "./tools.js";
+export type { ToolDefinition, ToolContext, WebmcpToolName, V2ToolName } from "./tools.js";
 export { WebmcpRegistry } from "./registry.js";
 export type { ToolRuntime, InvocationResult } from "./registry.js";
 export { registerWithWebmcp, emitToolChange, webmcpAvailable } from "./adapter.js";
