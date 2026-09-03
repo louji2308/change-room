@@ -60,8 +60,8 @@ const REAL_SCENARIOS: RealScenarioDef[] = [
   },
   {
     id: "db-pool-exhaust",
-    name: "Postgres pool exhaustion",
-    description: "Held connections fill the pool; database latency and errors spike.",
+    name: "Postgres connection pressure",
+    description: "Held connections raise server-level connection pressure; latency and errors spike.",
     difficulty: "hard",
     fault: { kind: "postgres_pool_exhaust", ttlMs: 90000, params: { connections: 5 } },
     expectedSymptoms: ["database engaged", "errors elevated"],
@@ -135,13 +135,15 @@ export class RealScenarioRunner implements WorldSource {
     await this.world.refresh?.();
   }
 
-  /** Expire (auto-restore) the injected fault, if any. */
-  reset(): void {
+  /** Expire (auto-restore) the injected fault early. */
+  expire(): void {
     if (this.activeFaultId) {
       this.driver.expire(this.activeFaultId);
       this.activeFaultId = null;
     }
   }
+  /** @deprecated Use expire() instead. */
+  reset(): void { this.expire(); }
 
   /** Stop the driver entirely (graceful final sweep). */
   shutdown(): void {
@@ -164,13 +166,25 @@ export class RealScenarioRunner implements WorldSource {
     };
   }
 
-  /** Score the operator's actions against the expected real recovery path. */
+  /** Score the operator's actions against the expected real recovery path.
+   *  Weights actual health recovery (60%) over action-name matching (40%) so a
+   *  genuinely recovered stack scores well even if the action names don't line
+   *  up with the catalog, and a still-degraded stack cannot score full marks
+   *  purely on action names. */
   evaluate(agentActions: Array<{ kind: string }>): { resolved: boolean; score: number; recoveryHits: string[]; session: ScenarioSession } {
     const expected = this.def.expectedRecovery;
     const norm = (k: string) => k.trim().toLowerCase();
     const recoveryHits = expected.filter((e) => agentActions.some((a) => norm(a.kind) === norm(e)));
-    const score = Math.round((recoveryHits.length / expected.length) * 100);
+    // Weight: 60% actual health recovery + 40% action-name matching
+    const healthScore = this.health() === "healthy" ? 60 : this.health() === "degraded" ? 20 : 0;
+    const actionScore = expected.length > 0 ? (recoveryHits.length / expected.length) * 40 : 0;
+    const score = Math.round(healthScore + actionScore);
     return { resolved: this.health() === "healthy", score, recoveryHits, session: this.session() };
+  }
+
+  /** Actions the real stack can actually execute (subset of all ActionType). */
+  supportedActionTypes(): string[] {
+    return ["clear_cache", "restart_cache", "do_nothing"];
   }
 
   // ---- WorldSource surface (sync over the latest real snapshot) ----
@@ -184,7 +198,7 @@ export class RealScenarioRunner implements WorldSource {
   predict(action: unknown, _overrides?: unknown): PredictionResult {
     return this.world.predict(action);
   }
-  executeChange(actionType: ActionType, parameters?: Record<string, number | string>, opts?: { neutralizeDisturbances?: boolean }) {
+  async executeChange(actionType: ActionType, parameters?: Record<string, number | string>, opts?: { neutralizeDisturbances?: boolean }): Promise<{ ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" }> {
     return this.world.executeChange(actionType, parameters, opts);
   }
   settle(seconds?: number): void {
@@ -193,7 +207,7 @@ export class RealScenarioRunner implements WorldSource {
   popUndoFrame(): UndoFrame | undefined {
     return this.world.popUndoFrame() as UndoFrame | undefined;
   }
-  rollback(): { ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" } {
+  async rollback(): Promise<{ ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" }> {
     return this.world.rollback();
   }
   session(): RealScenarioSession {

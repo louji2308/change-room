@@ -41,19 +41,19 @@ export interface ProbePaths {
   publishableApiKey?: string;
 }
 
-/** Reasonable defaults matching the local dev stack. */
+/** Reasonable defaults matching the local dev stack (env-var overridable). */
 export const DEFAULT_PROBE_PATHS: ProbePaths = {
-  redisCli: "C:\\Users\\LOUJAN B\\.dev-infra\\redis\\redis-cli.exe",
-  redisHost: "127.0.0.1",
-  redisPort: 6379,
-  psql: "C:\\Users\\LOUJAN B\\.dev-infra\\postgres\\bin\\psql.exe",
-  pgHost: "127.0.0.1",
-  pgPort: 5432,
-  pgUser: "postgres",
-  pgPassword: "postgres",
-  pgDatabase: "medusa-dtc-starter",
-  backendUrl: "http://localhost:9000",
-  storefrontUrl: "http://localhost:8000",
+  redisCli: process.env.REDIS_CLI_PATH ?? "C:\\Users\\LOUJAN B\\.dev-infra\\redis\\redis-cli.exe",
+  redisHost: process.env.REDIS_HOST ?? "127.0.0.1",
+  redisPort: Number(process.env.REDIS_PORT ?? "6379"),
+  psql: process.env.PSQL_PATH ?? "C:\\Users\\LOUJAN B\\.dev-infra\\postgres\\bin\\psql.exe",
+  pgHost: process.env.PG_HOST ?? "127.0.0.1",
+  pgPort: Number(process.env.PG_PORT ?? "5432"),
+  pgUser: process.env.PG_USER ?? "postgres",
+  pgPassword: process.env.PG_PASSWORD ?? "postgres",
+  pgDatabase: process.env.PG_DATABASE ?? "medusa-dtc-starter",
+  backendUrl: process.env.BACKEND_URL ?? "http://localhost:9000",
+  storefrontUrl: process.env.STOREFRONT_URL ?? "http://localhost:8000",
 };
 
 /** Structural twin of the simulator's MetricSeries. */
@@ -64,6 +64,10 @@ export interface RealMetricSeries {
   errorRate: number;
   queueDepth: number;
   degraded: boolean;
+  /** true = proxy/formula, false = directly measured from a real probe. */
+  derived: boolean;
+  /** Traceability: e.g. "redis:keyspace_hits" or "formula:latency/10". */
+  source: string;
 }
 
 /** Structural twin of the simulator's BusinessKpis. */
@@ -134,19 +138,60 @@ export interface RedisProbeOut {
   pingMs: number;
 }
 
-/** Most recent keyspace counters seen, enabling windowed (delta) hit rate. */
-let lastCounters: { hits: number; misses: number } | null = null;
+/**
+ * Instance-based probe state — replaces the old module-level globals
+ * `lastCounters` and `retentionWindow` that leaked across sessions.
+ * Each observation session should create or receive its own ProbeState.
+ */
+export class ProbeState {
+  private lastCounters: { hits: number; misses: number } | null = null;
+  private retentionWindow: boolean[] = [];
+  private static readonly RETENTION_WINDOW = 5;
+  private static readonly MIN_RETENTION_SAMPLES = 3;
 
-function deltaHitRate(hits: number, misses: number): number {
-  let dHits = hits;
-  let dMisses = misses;
-  if (lastCounters) {
-    // Counters can reset (e.g. Redis restart/FLUSHALL of INFO counters): guard.
-    dHits = Math.max(0, hits - lastCounters.hits);
-    dMisses = Math.max(0, misses - lastCounters.misses);
+  /**
+   * Windowed (delta) hit rate across consecutive probes.
+   * Detects counter resets (Redis restart) and returns 0 (cold cache)
+   * instead of 100 (healthy).
+   */
+  deltaHitRate(hits: number, misses: number): number {
+    let dHits = hits;
+    let dMisses = misses;
+    if (this.lastCounters) {
+      if (hits < this.lastCounters.hits || misses < this.lastCounters.misses) {
+        // Counter reset detected (Redis restart) — treat as cold cache.
+        this.lastCounters = { hits, misses };
+        return 0;
+      }
+      dHits = hits - this.lastCounters.hits;
+      dMisses = misses - this.lastCounters.misses;
+    }
+    this.lastCounters = { hits, misses };
+    return dHits + dMisses > 0 ? Math.round((dHits / (dHits + dMisses)) * 1000) / 10 : 100;
   }
-  lastCounters = { hits, misses };
-  return dHits + dMisses > 0 ? Math.round((dHits / (dHits + dMisses)) * 1000) / 10 : 100;
+
+  /**
+   * Record a retention probe result (first catalog read HIT/MISS) and return
+   * the sliding-window retention hit rate. Returns `{ rate, filled }` where
+   * `filled` indicates the window has >= MIN_RETENTION_SAMPLES observations
+   * and the rate is trustworthy; when `filled` is false callers should fall
+   * back to the serve rate instead.
+   */
+  recordRetention(hit: boolean): { rate: number; filled: boolean } {
+    this.retentionWindow.push(hit);
+    if (this.retentionWindow.length > ProbeState.RETENTION_WINDOW) this.retentionWindow.shift();
+    const hits = this.retentionWindow.filter(Boolean).length;
+    return {
+      rate: Math.round((hits / this.retentionWindow.length) * 1000) / 10,
+      filled: this.retentionWindow.length >= ProbeState.MIN_RETENTION_SAMPLES,
+    };
+  }
+
+  /** Clear all accumulated state (new session). */
+  reset(): void {
+    this.lastCounters = null;
+    this.retentionWindow = [];
+  }
 }
 
 /**
@@ -156,7 +201,7 @@ function deltaHitRate(hits: number, misses: number): number {
  * moving delta across consecutive probes, which the healthy-state calibration
  * targets; `cumulativeHitRate` is the since-boot average.
  */
-export async function probeRedis(paths: ProbePaths): Promise<RedisProbeOut> {
+export async function probeRedis(paths: ProbePaths, state: ProbeState): Promise<RedisProbeOut> {
   const info = await run(paths.redisCli, ["-h", paths.redisHost, "-p", String(paths.redisPort), "INFO"]);
   const get = (key: string): number => {
     const m = info.match(new RegExp(`^${key}:(\\d+)`, "m"));
@@ -165,7 +210,7 @@ export async function probeRedis(paths: ProbePaths): Promise<RedisProbeOut> {
   const hits = get("keyspace_hits");
   const misses = get("keyspace_misses");
   const cumulativeHitRate = hits + misses > 0 ? Math.round((hits / (hits + misses)) * 1000) / 10 : 100;
-  const windowedHitRate = deltaHitRate(hits, misses);
+  const windowedHitRate = state.deltaHitRate(hits, misses);
   const opsPerSec = get("instantaneous_ops_per_sec");
   const connectedClients = get("connected_clients");
   const expiredKeys = get("expired_keys");
@@ -343,16 +388,12 @@ export interface CheckoutFlowProbeOut {
   retentionHitRate: number;
   /** Whether any catalog read returned `x-medusa-cache: ERR` (cache backend failing). */
   cacheError: boolean;
-}
-
-/** Sliding window of recent first-read retention results (true = HIT). */
-const retentionWindow: boolean[] = [];
-const RETENTION_WINDOW = 5;
-function recordRetention(hit: boolean): number {
-  retentionWindow.push(hit);
-  if (retentionWindow.length > RETENTION_WINDOW) retentionWindow.shift();
-  const hits = retentionWindow.filter(Boolean).length;
-  return Math.round((hits / retentionWindow.length) * 1000) / 10;
+  /**
+   * true when the retention sliding window has >= 3 observations and the
+   * rate is trustworthy; false for first calls — callers should fall back
+   * to serve rate when this is false.
+   */
+  retentionWindowReady: boolean;
 }
 
 /**
@@ -367,6 +408,7 @@ function recordRetention(hit: boolean): number {
  */
 export async function probeCheckoutFlow(
   paths: ProbePaths,
+  state: ProbeState,
   fetchImpl: typeof fetch = fetch
 ): Promise<CheckoutFlowProbeOut> {
   const headers: Record<string, string> = {
@@ -440,7 +482,9 @@ export async function probeCheckoutFlow(
   // observation (first read HIT) — hidden by the rapid self-warming average.
   // A flushed/evicted cache loses the key, so the first read MISSes.
   const retentionFirstReadHit = firstReadHeader === "HIT";
-  const retentionHitRate = recordRetention(retentionFirstReadHit);
+  const retention = state.recordRetention(retentionFirstReadHit);
+  const retentionHitRate = retention.rate;
+  const retentionWindowReady = retention.filled;
 
   return {
     cartCreated: cartId !== null,
@@ -453,6 +497,7 @@ export async function probeCheckoutFlow(
     retentionHitRate,
     retentionFirstReadHit,
     cacheError: catalogErrors > 0,
+    retentionWindowReady,
     catalogReads,
     catalogHits,
     productStatus: lastProduct.status,
@@ -465,22 +510,24 @@ export async function probeCheckoutFlow(
 // ---------------------------------------------------------------------------
 
 const DEFAULT_METRICS: RealMetricSeries[] = [
-  { componentId: "traffic", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false },
-  { componentId: "api-gateway", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false },
-  { componentId: "checkout", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false },
-  { componentId: "search", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false },
-  { componentId: "payment", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false },
-  { componentId: "cache", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false },
-  { componentId: "inventory", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false },
-  { componentId: "queue", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false },
-  { componentId: "products", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false },
-  { componentId: "database", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false },
-  { componentId: "orders", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false },
+  { componentId: "traffic", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false, derived: true, source: "unmeasured" },
+  { componentId: "api-gateway", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false, derived: true, source: "unmeasured" },
+  { componentId: "checkout", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false, derived: false, source: "unmeasured" },
+  { componentId: "search", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false, derived: true, source: "unmeasured" },
+  { componentId: "payment", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false, derived: true, source: "unmeasured" },
+  { componentId: "cache", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false, derived: false, source: "unmeasured" },
+  { componentId: "inventory", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false, derived: true, source: "unmeasured" },
+  { componentId: "queue", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false, derived: false, source: "unmeasured" },
+  { componentId: "products", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false, derived: true, source: "unmeasured" },
+  { componentId: "database", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false, derived: false, source: "unmeasured" },
+  { componentId: "orders", utilization: 0, latencyMs: 0, errorRate: 0, queueDepth: 0, degraded: false, derived: true, source: "unmeasured" },
 ];
 
 export interface RealProbeOptions extends ProbePaths {
   /** Injected fetch (testability). */
   fetchImpl?: typeof fetch;
+  /** Optional persistent probe state; created internally if not provided. */
+  probeState?: ProbeState;
 }
 
 /**
@@ -506,12 +553,13 @@ export async function observeRealSystem(opts: RealProbeOptions): Promise<RealPro
     publishableApiKey: opts.publishableApiKey,
   };
 
+  const state = opts.probeState ?? new ProbeState();
   const probeErrors: string[] = [];
   const trace: Record<string, string> = {};
 
   let redis: RedisProbeOut | null = null;
   try {
-    redis = await probeRedis(paths);
+    redis = await probeRedis(paths, state);
     trace.redis = `hits↔misses → cum=${redis.cumulativeHitRate}%, win=${redis.windowedHitRate}%, ops=${redis.opsPerSec}/s, clients=${redis.connectedClients}, expired=${redis.expiredKeys}, ping=${redis.pingMs}ms`;
   } catch (e) {
     probeErrors.push(`redis: ${(e as Error).message}`);
@@ -537,7 +585,7 @@ export async function observeRealSystem(opts: RealProbeOptions): Promise<RealPro
   // non-catalog store routes. Drive the cache miss signal from actual traffic.
   let checkoutFlow: CheckoutFlowProbeOut | null = null;
   try {
-    checkoutFlow = await probeCheckoutFlow(paths, opts.fetchImpl);
+    checkoutFlow = await probeCheckoutFlow(paths, state, opts.fetchImpl);
     trace.checkoutFlow =
       `create=${checkoutFlow.createStatus}(${checkoutFlow.createMs}ms)` +
       (checkoutFlow.cartId
@@ -560,6 +608,9 @@ export async function observeRealSystem(opts: RealProbeOptions): Promise<RealPro
     utilization: round1(trafficUtil),
     latencyMs: http?.storefrontLatencyMs ?? 0,
     errorRate: trafficErr,
+    derived: true,
+    source: http ? "formula:storefrontLatency/10" : "probe_failed:http",
+    degraded: !http,
   });
 
   // ---- api-gateway (proxy from storefront/backend latency) ----
@@ -569,7 +620,9 @@ export async function observeRealSystem(opts: RealProbeOptions): Promise<RealPro
     utilization: round1(http ? clamp(10 + gwLatency / 20, 0, 100) : 0),
     latencyMs: gwLatency,
     errorRate: gwErr,
-    degraded: gwErr > 5,
+    degraded: !http || gwErr > 5,
+    derived: true,
+    source: http ? "formula:10+gwLatency/20" : "probe_failed:http",
   });
 
   // ---- cache (header-derived retention hit rate + TTL evictions) ----
@@ -581,28 +634,48 @@ export async function observeRealSystem(opts: RealProbeOptions): Promise<RealPro
   // observations), which a healthy cache holds ~100% and a flushed/evicted
   // cache sinks toward 0%; the average warm-read hit rate captures serving
   // behavior. Redis windowed rate is the fallback.
-  const cacheRetentionRate = checkoutFlow ? checkoutFlow.retentionHitRate : redis?.windowedHitRate ?? 100;
-  const cacheServeRate = checkoutFlow ? checkoutFlow.cacheHitRate : redis?.windowedHitRate ?? 100;
-  const cacheMissPct = 100 - cacheServeRate;
+  // When the checkoout flow probe failed, retain = 0 (unknown/degraded) — NOT
+  // 100 (healthy). Same for the serve rate: a failed/short probe is not a
+  // healthy cache. Retention is only trusted once the window has filled
+  // (>= 3 observations); before that, fall back to the serve rate for the
+  // degradation decision.
+  const cacheRetentionRate = checkoutFlow
+    ? checkoutFlow.retentionHitRate
+    : redis
+      ? redis.windowedHitRate
+      : 0;
+  const cacheServeRate = checkoutFlow
+    ? checkoutFlow.cacheHitRate
+    : redis
+      ? redis.windowedHitRate
+      : 0;
+  const cacheMissPct = cacheServeRate > 0 ? 100 - cacheServeRate : 100;
   const cacheFlushSignal = redis && redis.expiredKeys > 0 ? (redis.expiredKeys > 5 ? 6 : 3) : 0;
   const cacheErrSignal = checkoutFlow?.cacheError ? 8 : 0;
+  const cacheProbeFailed = !checkoutFlow && !redis;
+  const retentionReady = checkoutFlow ? checkoutFlow.retentionWindowReady : true;
+  const retentionRateForDegrade = retentionReady ? cacheRetentionRate : cacheServeRate;
   setMetric(metrics, "cache", {
     utilization: round1(cacheMissPct),
     latencyMs: redis?.pingMs ?? 0,
     queueDepth: redis?.opsPerSec ? Math.round(redis.opsPerSec / 100) : 0,
-    errorRate: Math.max(cacheFlushSignal, cacheErrSignal),
-    degraded: cacheErrSignal > 0 || cacheRetentionRate < 60 || cacheServeRate < 60,
+    errorRate: cacheProbeFailed ? 10 : Math.max(cacheFlushSignal, cacheErrSignal),
+    degraded: cacheProbeFailed || cacheErrSignal > 0 || retentionRateForDegrade < 60 || cacheServeRate < 60,
+    derived: false,
+    source: checkoutFlow ? "header:x-medusa-cache" : redis ? "redis:windowedHitRate" : "probe_failed:checkout_flow+redis",
   });
 
   // ---- database (from Postgres connection saturation) ----
   const dbUtil = pg?.utilization ?? 0;
-  const dbLatency = pg && pg.waiting > 0 ? 250 + pg.waiting * 20 : pg?.utilization ?? 0;
+  const dbLatency = pg && pg.waiting > 0 ? 250 + pg.waiting * 20 : dbUtil;
   setMetric(metrics, "database", {
     utilization: dbUtil,
     latencyMs: Math.round(dbLatency),
     queueDepth: pg?.waiting ?? 0,
     degraded: pg ? pg.utilization > 85 : true,
-    errorRate: pg && pg.waiting > 5 ? 5 : 0,
+    errorRate: pg ? (pg.waiting > 5 ? 5 : 0) : 10,
+    derived: false,
+    source: pg ? "postgres:pg_stat_activity" : "probe_failed:postgres",
   });
 
   // ---- checkout (from backend store latency + cart-flow errors) ----
@@ -626,17 +699,58 @@ export async function observeRealSystem(opts: RealProbeOptions): Promise<RealPro
     utilization: round1(http ? clamp(20 + checkoutLatency / 8, 0, 100) : 0),
     latencyMs: checkoutLatency,
     errorRate: checkoutErr,
-    degraded: checkoutErr > 5,
+    degraded: !http && !checkoutFlow ? true : checkoutErr > 5,
     queueDepth: 0,
+    derived: false,
+    source: http ? "http:backend+cart_flow" : "probe_failed:http+checkout_flow",
   });
 
   // ---- products / search / inventory / queue / payment / orders ----
-  setMetric(metrics, "products", { utilization: http ? clamp(10 + checkoutLatency / 20, 0, 100) : 0, latencyMs: checkoutLatency });
-  setMetric(metrics, "search", { utilization: round1(redis ? clamp(5 + redis.opsPerSec / 80, 0, 100) : 0), latencyMs: redis?.pingMs ?? 0 });
-  setMetric(metrics, "inventory", { utilization: round1(pg ? clamp(5 + pg.activeConnections / 8, 0, 100) : 0), latencyMs: dbLatency });
-  setMetric(metrics, "queue", { utilization: round1(pg ? clamp(pg.waiting * 25, 0, 100) : 0), queueDepth: pg?.waiting ?? 0, latencyMs: checkoutLatency, degraded: pg ? pg.waiting > 5 : false });
-  setMetric(metrics, "payment", { utilization: round1(http ? clamp(5 + checkoutLatency / 10, 0, 100) : 0), latencyMs: checkoutLatency, errorRate: checkoutErr });
-  setMetric(metrics, "orders", { utilization: round1(pg ? clamp(pg.activeConnections, 0, 100) : 0), latencyMs: checkoutLatency, errorRate: checkoutErr });
+  setMetric(metrics, "products", {
+    utilization: http ? clamp(10 + checkoutLatency / 20, 0, 100) : 0,
+    latencyMs: checkoutLatency,
+    degraded: !http,
+    derived: true,
+    source: http ? "formula:10+checkoutLatency/20" : "probe_failed:http",
+  });
+  setMetric(metrics, "search", {
+    utilization: round1(redis ? clamp(5 + redis.opsPerSec / 80, 0, 100) : 0),
+    latencyMs: redis?.pingMs ?? 0,
+    degraded: !redis,
+    derived: true,
+    source: redis ? "formula:5+redis.opsPerSec/80" : "probe_failed:redis",
+  });
+  setMetric(metrics, "inventory", {
+    utilization: round1(pg ? clamp(5 + pg.activeConnections / 8, 0, 100) : 0),
+    latencyMs: dbLatency,
+    degraded: !pg,
+    derived: true,
+    source: pg ? "formula:5+pg.activeConnections/8" : "probe_failed:postgres",
+  });
+  setMetric(metrics, "queue", {
+    utilization: round1(pg ? clamp(pg.waiting * 25, 0, 100) : 0),
+    queueDepth: pg?.waiting ?? 0,
+    latencyMs: checkoutLatency,
+    degraded: pg ? pg.waiting > 5 : true,
+    derived: false,
+    source: pg ? "postgres:waiting" : "probe_failed:postgres",
+  });
+  setMetric(metrics, "payment", {
+    utilization: round1(http ? clamp(5 + checkoutLatency / 10, 0, 100) : 0),
+    latencyMs: checkoutLatency,
+    errorRate: checkoutErr,
+    degraded: !http,
+    derived: true,
+    source: http ? "formula:5+checkoutLatency/10" : "probe_failed:http",
+  });
+  setMetric(metrics, "orders", {
+    utilization: round1(pg ? clamp(pg.activeConnections, 0, 100) : 0),
+    latencyMs: checkoutLatency,
+    errorRate: checkoutErr,
+    degraded: !pg,
+    derived: true,
+    source: pg ? "postgres:activeConnections" : "probe_failed:postgres",
+  });
 
   // ---- business KPIs ----
   const kpis: RealBusinessKpis = {

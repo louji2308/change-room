@@ -41,7 +41,7 @@ import {
   type RealProbeResult,
   type RealMetricSeries,
 } from "@change-room/state";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 
 /** The subset of `ScenarioRunner` the session actually consumes. */
 export interface WorldSource {
@@ -56,10 +56,10 @@ export interface WorldSource {
     actionType: ActionType,
     parameters?: Record<string, number | string>,
     opts?: { neutralizeDisturbances?: boolean }
-  ): { ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" };
+  ): Promise<{ ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" }>;
   settle(seconds?: number): void;
   popUndoFrame(): UndoFrame | undefined;
-  rollback(): { ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" };
+  rollback(): Promise<{ ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" }>;
   session(): { scenarioId: string; startedAt: number; steps: number };
   /** Asynchronously refresh the real telemetry snapshot (live path). */
   refresh?(): Promise<void>;
@@ -97,12 +97,18 @@ export function toMetrics(rs: RealMetricSeries[]): MetricSeries[] {
   }));
 }
 
-/** Cache-related plan actions that map to a real, reversible Redis FLUSHALL. */
+/** Cache-related plan actions that map to real, reversible Redis operations. */
 const CACHE_ACTIONS: ReadonlySet<string> = new Set([
   "restart_cache",
-  "increase_cache_capacity",
-  "clear_cache",
 ]);
+
+const NOT_APPLICABLE_ACTIONS: ReadonlySet<string> = new Set([
+  "increase_cache_capacity",
+]);
+
+function envOrDefault(envKey: string, fallback: string): string {
+  return process.env[envKey] ?? fallback;
+}
 
 function exec(cmd: string, args: string[], timeoutMs = 8000): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -117,7 +123,7 @@ export class RealMedusaWorld implements WorldSource {
   private readonly store: StateStore;
   /** Most recent real telemetry snapshot (synchronous read-back). */
   private lastProbe: RealProbeResult;
-  private undoFrame: { snapshotId: string; kpis: BusinessKpis } | null = null;
+  private undoFrame: { snapshotId: string; kpis: BusinessKpis; flushedKeys?: Array<{ key: string; dump: string }> } | null = null;
   private startedAt = Date.now();
   private steps = 0;
 
@@ -207,20 +213,35 @@ export class RealMedusaWorld implements WorldSource {
   }
 
   /** Execute a remediation against the real stack; only safe, reversible ops. */
-  executeChange(
+  async executeChange(
     actionType: ActionType,
     _parameters: Record<string, number | string> = {},
     _opts: { neutralizeDisturbances?: boolean } = {}
-  ): { ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" } {
-    if (CACHE_ACTIONS.has(actionType)) {
-      const snapshotId = this.store.snapshot().id;
-      this.undoFrame = { snapshotId, kpis: toBusinessKpis(this.lastProbe.kpis) };
-      const redisCli = this.opts.redisCli ?? "C:\\Users\\LOUJAN B\\.dev-infra\\redis\\redis-cli.exe";
-      exec(redisCli, ["-h", "127.0.0.1", "-p", "6379", "FLUSHALL"]).catch(() => {});
+  ): Promise<{ ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" }> {
+    if (NOT_APPLICABLE_ACTIONS.has(actionType)) {
+      return { ok: false, unmet: [`action ${actionType} has no real-world equivalent and cannot be executed`], health: this.health() };
+    }
+    if (!CACHE_ACTIONS.has(actionType)) {
+      return { ok: false, unmet: [`action ${actionType} is not applicable on the real stack`], health: this.health() };
+    }
+    const snapshotId = this.store.snapshot().id;
+    const redisCli = this.opts.redisCli ?? envOrDefault("REDIS_CLI_PATH", "C:\\Users\\LOUJAN B\\.dev-infra\\redis\\redis-cli.exe");
+    try {
+      let flushedKeys: Array<{ key: string; dump: string }> | undefined;
+      if (actionType === "restart_cache") {
+        try {
+          await exec(redisCli, ["-h", "127.0.0.1", "-p", "6379", "DEBUG", "RELOAD"]);
+        } catch {
+          flushedKeys = await this.captureAndFlushMedusaKeys(redisCli);
+          await exec(redisCli, ["-h", "127.0.0.1", "-p", "6379", "CONFIG", "SET", "maxmemory-policy", "allkeys-lru"]).catch(() => {});
+        }
+      }
+      this.undoFrame = { snapshotId, kpis: toBusinessKpis(this.lastProbe.kpis), flushedKeys };
       this.steps += 1;
       return { ok: true, unmet: [], health: this.health() };
+    } catch (e) {
+      return { ok: false, unmet: [`execute ${actionType} failed: ${(e as Error).message}`], health: this.health() };
     }
-    return { ok: false, unmet: [`action ${actionType} is not applicable on the real stack`], health: this.health() };
   }
 
   settle(_seconds = 1): void {
@@ -235,13 +256,59 @@ export class RealMedusaWorld implements WorldSource {
     return undefined;
   }
 
-  rollback(): { ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" } {
+  async rollback(): Promise<{ ok: boolean; unmet: string[]; health: "healthy" | "degraded" | "down" }> {
     const f = this.undoFrame;
     this.undoFrame = null;
     if (!f) return { ok: false, unmet: ["no executed change to roll back"], health: this.health() };
-    // Restore the StateStore snapshot (authoritative prior state).
     this.store.restore({ id: f.snapshotId } as never);
+    if (f.flushedKeys && f.flushedKeys.length > 0) {
+      const redisCli = this.opts.redisCli ?? envOrDefault("REDIS_CLI_PATH", "C:\\Users\\LOUJAN B\\.dev-infra\\redis\\redis-cli.exe");
+      await this.restoreKeys(redisCli, f.flushedKeys).catch(() => {});
+    }
     return { ok: true, unmet: [], health: this.health() };
+  }
+
+  private async scanKeys(redisCli: string, pattern: string): Promise<string[]> {
+    const output = await exec(redisCli, ["-h", "127.0.0.1", "-p", "6379", "--scan", "--pattern", pattern]);
+    return output.split("\n").filter((l) => l.trim().length > 0);
+  }
+
+  private async captureAndFlushMedusaKeys(redisCli: string): Promise<Array<{ key: string; dump: string }>> {
+    const keys = await this.scanKeys(redisCli, "medusa:*");
+    const dumps: Array<{ key: string; dump: string }> = [];
+    for (const key of keys) {
+      try {
+        const dump = await exec(redisCli, ["-h", "127.0.0.1", "-p", "6379", "DUMP", key]);
+        dumps.push({ key, dump: dump.trim() });
+      } catch {
+        /* key may have expired between scan and dump */
+      }
+    }
+    if (keys.length > 0) {
+      await exec(redisCli, ["-h", "127.0.0.1", "-p", "6379", "DEL", ...keys]).catch(() => {});
+    }
+    return dumps;
+  }
+
+  private async restoreKeys(redisCli: string, dumps: Array<{ key: string; dump: string }>): Promise<void> {
+    for (const { key, dump } of dumps) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const child = spawn(redisCli,
+            ["-h", "127.0.0.1", "-p", "6379", "-x", "RESTORE", key, "0", "REPLACE"],
+            { windowsHide: true }
+          );
+          child.stdin.write(dump);
+          child.stdin.end();
+          let stderr = "";
+          child.stderr?.on("data", (d: Buffer) => { stderr += d; });
+          child.on("close", (code) => code === 0 ? resolve() : reject(new Error(stderr || `RESTORE ${key} failed code=${code}`)));
+          child.on("error", reject);
+        });
+      } catch {
+        /* key restore is best-effort */
+      }
+    }
   }
 
   session(): { scenarioId: string; startedAt: number; steps: number } {

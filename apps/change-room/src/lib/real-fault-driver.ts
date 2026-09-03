@@ -57,10 +57,12 @@ export interface FaultState {
   /** PIDs this driver spawned; the ONLY PIDs it may later kill. */
   childPids: number[];
   childrenCleaned: boolean;
-  /** Postgres: prior pool snapshot (free connections before exhaustion). */
-  priorFreeConnections?: number;
+  /** Postgres: prior pool snapshot (active sessions before exhaustion). */
+  priorActiveSessions?: number;
   /** Redis: key count observed at flush time (observability only). */
   flushedAt?: number;
+  /** Redis: captured keys before flush, for restore on release. */
+  flushedKeys?: Array<{ key: string; dump: string }>;
   /** Loop abort handle for sustained http load. */
   httpAbort?: AbortController;
   /** Loop promise (awaited on release). */
@@ -81,7 +83,7 @@ export interface RealFaultDriverOptions {
   /** Named queries the driver runs against Postgres (injectable). */
   pgSql?: {
     heldConnection?: string;
-    freeConnections?: string;
+    activeSessions?: string;
   };
   /** Injectable command executor (defaults to a real child_process one). */
   exec?: (cmd: string, args: string[], opts?: { spawn?: boolean; env?: Record<string, string> }) => Promise<string>;
@@ -96,8 +98,12 @@ export interface RealFaultDriverOptions {
   onSustain?: (fault: ActiveFault, detail: Record<string, unknown>) => void;
 }
 
-const DEFAULT_REDIS_CLI = "C:\\Users\\LOUJAN B\\.dev-infra\\redis\\redis-cli.exe";
-const DEFAULT_PSQL = "C:\\Users\\LOUJAN B\\.dev-infra\\postgres\\bin\\psql.exe";
+function envOrDefault(envKey: string, fallback: string): string {
+  return process.env[envKey] ?? fallback;
+}
+
+const DEFAULT_REDIS_CLI = envOrDefault("REDIS_CLI_PATH", "C:\\Users\\LOUJAN B\\.dev-infra\\redis\\redis-cli.exe");
+const DEFAULT_PSQL = envOrDefault("PSQL_PATH", "C:\\Users\\LOUJAN B\\.dev-infra\\postgres\\bin\\psql.exe");
 const DEFAULT_HELD_SQL = "SELECT pg_sleep(60);";
 const DEFAULT_FREE_SQL =
   "SELECT count(*)::int FROM pg_stat_activity WHERE datname = current_database() AND state = 'active';";
@@ -259,7 +265,7 @@ export class RealFaultDriver {
     switch (fault.kind) {
       case "redis_flush":
         detail.flushedAt = Date.now();
-        await this.redis("FLUSHALL");
+        fault.state.flushedKeys = await this.captureAndFlushMedusaKeys();
         fault.state.flushedAt = detail.flushedAt as number;
         break;
       case "redis_sleep": {
@@ -275,8 +281,8 @@ export class RealFaultDriver {
       case "postgres_pool_exhaust": {
         if (fault.state.childPids.length === 0) {
           const n = fault.params?.connections ?? 5;
-          const freeBefore = await this.pgNumFree().catch(() => undefined);
-          fault.state.priorFreeConnections = freeBefore;
+          const freeBefore = await this.pgActiveSessions().catch(() => undefined);
+          fault.state.priorActiveSessions = freeBefore;
           for (let i = 0; i < n; i++) {
             const pid = await this.spawnHeldConnection().catch(() => 0);
             if (pid > 0) fault.state.childPids.push(pid);
@@ -304,10 +310,9 @@ export class RealFaultDriver {
     }
   }
 
-  /** Restore the fault's exact prior state (children killed, activity stopped). */
+  /** Restore the fault's exact prior state (children killed, activity stopped, keys restored). */
   private async release(fault: ActiveFault): Promise<void> {
     const st = fault.state;
-    // Stop sustained http loop first so no new work races the cleanup.
     if (st.httpAbort) {
       st.httpAbort.abort();
       st.httpAbort = undefined;
@@ -316,7 +321,6 @@ export class RealFaultDriver {
         st.httpLoop = undefined;
       }
     }
-    // Kill only the child PIDs this driver itself spawned.
     if (st.childPids.length > 0 && !st.childrenCleaned) {
       for (const pid of st.childPids) {
         await this.opts.killPid(pid).catch(() => {});
@@ -324,14 +328,61 @@ export class RealFaultDriver {
       st.childPids = [];
       st.childrenCleaned = true;
     }
+    if (st.flushedKeys && st.flushedKeys.length > 0) {
+      await this.restoreKeys(st.flushedKeys).catch(() => {});
+      st.flushedKeys = undefined;
+    }
   }
 
   private async redis(...args: string[]): Promise<string> {
     return this.opts.exec(this.opts.redisCli, ["-h", "127.0.0.1", "-p", "6379", ...args]);
   }
 
-  private async pgNumFree(): Promise<number> {
-    const sql = this.opts.pgSql?.freeConnections ?? DEFAULT_FREE_SQL;
+  private async scanKeys(pattern: string): Promise<string[]> {
+    const output = await this.redis("--scan", "--pattern", pattern);
+    return output.split("\n").filter((l) => l.trim().length > 0);
+  }
+
+  private async captureAndFlushMedusaKeys(): Promise<Array<{ key: string; dump: string }>> {
+    const keys = await this.scanKeys("medusa:*");
+    const dumps: Array<{ key: string; dump: string }> = [];
+    for (const key of keys) {
+      try {
+        const dump = await this.redis("DUMP", key);
+        dumps.push({ key, dump: dump.trim() });
+      } catch {
+        /* key may have expired between scan and dump */
+      }
+    }
+    if (keys.length > 0) {
+      await this.redis("DEL", ...keys).catch(() => {});
+    }
+    return dumps;
+  }
+
+  private async restoreKeys(dumps: Array<{ key: string; dump: string }>): Promise<void> {
+    for (const { key, dump } of dumps) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const child = spawn(this.opts.redisCli,
+            ["-h", "127.0.0.1", "-p", "6379", "-x", "RESTORE", key, "0", "REPLACE"],
+            { windowsHide: true }
+          );
+          child.stdin.write(dump);
+          child.stdin.end();
+          let stderr = "";
+          child.stderr?.on("data", (d: Buffer) => { stderr += d; });
+          child.on("close", (code) => code === 0 ? resolve() : reject(new Error(stderr || `RESTORE ${key} failed code=${code}`)));
+          child.on("error", reject);
+        });
+      } catch {
+        /* key restore is best-effort */
+      }
+    }
+  }
+
+  private async pgActiveSessions(): Promise<number> {
+    const sql = this.opts.pgSql?.activeSessions ?? DEFAULT_FREE_SQL;
     const out = await this.opts.exec(this.opts.psql, ["-tA", "-w", "-c", sql], { env: this.opts.pgEnv });
     const n = parseInt(String(out).trim(), 10);
     return Number.isFinite(n) ? n : -1;

@@ -1,6 +1,11 @@
 /**
  * Change Room — server-side operational session (Phases 4, 5, 6, 8, 9, 11).
  *
+ * Architecture: single-session singleton. All clients share the same operational
+ * state (scenario, plans, approval, delegation, flight recorder). This is
+ * intentional for single-operator control-room use. Multi-user isolation is
+ * out of scope.
+ *
  * The single host that connects the scenario runtime, the change-control
  * boundary, the reasoning agent, the prediction-vs-reality engine and the
  * flight recorder behind one workflow state machine. The app keeps exactly one
@@ -156,7 +161,10 @@ export class ChangeRoomSession {
     runner.start();
     // advance into the incident a little so the agent sees degraded/impact
     runner.settle(20);
-    this.boot(runner, scenarioId);
+    // The sync ScenarioRunner is structurally incompatible with the async
+    // WorldSource used by the real stack; the session only consumes the
+    // compatible subset, and `await` on its sync results is a no-op.
+    this.boot(runner as unknown as WorldSource, scenarioId);
   }
 
   /**
@@ -179,12 +187,18 @@ export class ChangeRoomSession {
     this.boot(runner, id);
   }
 
-  /** Expire (auto-restore) any active real fault for the current scenario. */
-  resetRealScenario(): void {
+  /**
+   * Expire (auto-restore) any active real fault for the current scenario.
+   * `expire` matches the "timeout-based auto-restore only" contract — the
+   * sweeper (or an explicit early expire) restores the exact prior state.
+   */
+  expireRealScenario(): void {
     const runner = this.runner;
-    if (runner && runner instanceof RealScenarioRunner) runner.reset();
-    this.flight.record({ actor: "system", type: "observation", resultSummary: "real scenario fault reset (auto-restored)" });
+    if (runner && runner instanceof RealScenarioRunner) runner.expire();
+    this.flight.record({ actor: "system", type: "observation", resultSummary: "real scenario fault expired (auto-restored early)" });
   }
+  /** @deprecated Use expireRealScenario(). */
+  resetRealScenario(): void { this.expireRealScenario(); }
 
   /** Shared boot: wire the world source, orchestrator, and session state. */
   private boot(runner: WorldSource, name: string): void {
@@ -341,7 +355,7 @@ export class ChangeRoomSession {
    * Execute the approved plan on the LIVE world through Change Control, then
    * transition to EXECUTED and make the actual result measurable for verify().
    */
-  executeChange(): { ok: boolean; health: string; error?: string } {
+  async executeChange(): Promise<{ ok: boolean; health: string; error?: string }> {
     const runner = this.requireRunner();
     const plan = this.selectedPlan();
     const intentContract = this.orchestrator!.last.contract;
@@ -407,7 +421,7 @@ export class ChangeRoomSession {
       return { ok: false, health: runner.health(), error: "plan has no actions" };
     }
 
-    const res = runner.executeChange(action.type as ActionType, (action.parameters ?? {}) as Record<string, number | string>, { neutralizeDisturbances: true });
+    const res = await runner.executeChange(action.type as ActionType, (action.parameters ?? {}) as Record<string, number | string>, { neutralizeDisturbances: true });
     runner.settle(24);
 
     // P0-6: Capture the undo frame from the engine for snapshot-based rollback.
@@ -426,13 +440,19 @@ export class ChangeRoomSession {
       timestamp: Date.now(),
     });
 
-    // A committed change moves the world to a new state version.
-    this.currentVersion += 1;
+    if (!res.ok) {
+      this.workflow = "DEVIATION";
+      this.phase = { name: "deviated", verdict: "EXECUTION_FAILED" };
+      this.flight.record({ actor: "system", type: "execution_completed", planId: plan.id, resultSummary: `execution FAILED: ${action.type}; ok=false; errors=${res.unmet.join(", ")}`, detail: gate ? { gate: gate.stage } : undefined });
+      return { ok: false, health: runner.health(), error: res.unmet.join(", ") };
+    }
 
+    // Only advance state on successful execution
+    this.currentVersion += 1;
     this.workflow = "EXECUTED";
     this.phase = { name: "executed" };
-    this.flight.record({ actor: "system", type: "execution_completed", planId: plan.id, resultSummary: `executed ${action.type}; ok=${res.ok}; health=${runner.health()}`, detail: gate ? { gate: gate.stage } : undefined });
-    return { ok: res.ok, health: runner.health(), error: res.ok ? undefined : res.unmet.join(", ") };
+    this.flight.record({ actor: "system", type: "execution_completed", planId: plan.id, resultSummary: `executed ${action.type}; ok=true; health=${runner.health()}`, detail: gate ? { gate: gate.stage } : undefined });
+    return { ok: true, health: runner.health() };
   }
 
   /** Compare prediction vs reality and move to COMPLETE (or DEVIATION). */
@@ -447,7 +467,7 @@ export class ChangeRoomSession {
   }
 
   /** Roll back the executed change. */
-  rollbackChange(): void {
+  async rollbackChange(): Promise<void> {
     const runner = this.requireRunner();
     const plan = this.selectedPlan();
 
@@ -458,7 +478,7 @@ export class ChangeRoomSession {
     const undoFrame = this.undoFrames.get(plan.id);
     if (undoFrame) {
       this.undoFrames.delete(plan.id);
-      const res = runner.rollback();
+      const res = await runner.rollback();
       runner.settle(24);
       this.workflow = "RECOVERING";
       this.phase = { name: "recovered" };
@@ -476,7 +496,7 @@ export class ChangeRoomSession {
       scale_database: "restore_configuration",
     };
     const rb = rollbackFor[original] ?? "restart_cache";
-    runner.executeChange((rb ?? "restart_cache") as ActionType, {}, { neutralizeDisturbances: true });
+    await runner.executeChange((rb ?? "restart_cache") as ActionType, {}, { neutralizeDisturbances: true });
     runner.settle(24);
     this.workflow = "RECOVERING";
     this.phase = { name: "recovered" };
@@ -588,11 +608,11 @@ export class ChangeRoomSession {
    * which invalidates any plan the agent created earlier (stale-plan detection)
    * and is recorded for conflict detection.
    */
-  humanTakeover(actionType: ActionType, params: Record<string, number | string> = {}, note = "human modified the system manually"): { ok: boolean; stateVersion: number; health: string; error?: string } {
+  async humanTakeover(actionType: ActionType, params: Record<string, number | string> = {}, note = "human modified the system manually"): Promise<{ ok: boolean; stateVersion: number; health: string; error?: string }> {
     const runner = this.requireRunner();
     const wasPaused = this.paused;
     this.paused = true;
-    const res = runner.executeChange(actionType, params, { neutralizeDisturbances: false });
+    const res = await runner.executeChange(actionType, params, { neutralizeDisturbances: false });
     runner.settle(10);
     const newVersion = ++this.currentVersion;
     const now = Date.now();
@@ -836,7 +856,7 @@ export class ChangeRoomSession {
             return { ok: false, error: `execute_change: planId '${planId}' is not the approved plan '${selected.id}'` };
           }
         }
-        const res = this.executeChange();
+        const res = await this.executeChange();
         return { ok: true, data: res };
       }
       case "verify_change": {
@@ -850,7 +870,7 @@ export class ChangeRoomSession {
         if (this.workflow !== "EXECUTED" && this.workflow !== "DEVIATION" && this.workflow !== "RECOVERING") {
           return { ok: false, error: `rollback_change requires EXECUTED/DEVIATION/RECOVERING, got ${this.workflow}` };
         }
-        this.rollbackChange();
+        await this.rollbackChange();
         return { ok: true, data: { health: runner.health() } };
       }
       case "challenge_plan": {
@@ -1003,7 +1023,7 @@ function resourcesForAction(type: string): string[] {
 }
 
 let _session: ChangeRoomSession | null = null;
-/** Module-level singleton for the in-memory sandbox session. */
+/** Module-level singleton — single-operator control room. All clients share state. */
 export function getSession(): ChangeRoomSession {
   if (!_session) _session = new ChangeRoomSession();
   return _session;
