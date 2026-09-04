@@ -1,0 +1,29 @@
+# Medusa backend systemd unit for Oracle Cloud Free Tier
+#
+# Copy to: /etc/systemd/system/medusa.service
+# Then:    sudo systemctl daemon-reload
+#          sudo systemctl enable --now medusa
+#
+# Run after bash docs/oracle-medusa-setup.sh has completed migration/seed.
+# The setup script ends with `exec pnpm start`; instead run it to completion
+# (which builds + migrates) and then start this service for always-on hosting.
+
+[Unit]
+Description=Medusa backend (Change Room) - shared worker mode
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=change-room
+Group=change-room
+WorkingDirectory=/opt/change-room/apps/backend
+EnvironmentFile=/opt/change-room/apps/backend/.env
+ExecStart=/usr/bin/pnpm start -- --port 9000
+Restart=always
+RestartSec=5
+# Medusa build needs headroom, but the running server is lighter.
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
