@@ -53,15 +53,13 @@ services:
     runtime: node
     repo: https://github.com/louji2308/change-room
     branch: main
-    plan: free
+    plan: 2c-4g
     healthCheckPath: /health
     buildCommand: pnpm install --frozen-lockfile && pnpm --filter @dtc/backend build && pnpm --filter @dtc/backend predeploy && cd apps/backend/.medusa/server && pnpm install --prod
     startCommand: cd apps/backend/.medusa/server && pnpm start
     envVars:
       - key: NODE_ENV
         value: production
-      - key: NODE_OPTIONS
-        value: --max-old-space-size=384
       - key: MEDUSA_WORKER_MODE
         value: server
       - key: DISABLE_MEDUSA_ADMIN
@@ -108,14 +106,12 @@ services:
     runtime: node
     repo: https://github.com/louji2308/change-room
     branch: main
-    plan: free
+    plan: 2c-4g
     buildCommand: pnpm install --frozen-lockfile && pnpm --filter @dtc/backend build && cd apps/backend/.medusa/server && pnpm install --prod
     startCommand: cd apps/backend/.medusa/server && pnpm start
     envVars:
       - key: NODE_ENV
         value: production
-      - key: NODE_OPTIONS
-        value: --max-old-space-size=384
       - key: MEDUSA_WORKER_MODE
         value: worker
       - key: DISABLE_MEDUSA_ADMIN
