@@ -131,8 +131,45 @@ comes from other subsystems (event bus/locking) — benign; our cache provider l
 2. ~~Add cart-triggered real cache traffic (checkout/order flow) for non-catalog routes.~~
    **DONE** — `probeCheckoutFlow` creates real carts + reads dedicated catalog route;
    `retentionHitRate` in `CheckoutFlowProbeOut`; wired into cache component + KPIs.
-3. Build `RealFaultDriver` (reversible + TTL auto-restore; Redis FLUSHALL/CLIENT KILL/
-   DEBUG SLEEP, Postgres pool exhaustion, HTTP/load injection). Sustained cache-wipe
-   fault injection is now observable via `retentionHitRate`.
-4. `RealScenarioRunner` mirroring `ScenarioRunner` surface.
-5. Integrate into `apps/change-room/src/lib/session.ts`.
+3. ~~Build `RealFaultDriver`~~ **DONE** — reversible + TTL auto-restore; scoped
+   `medusa:*` scan+DUMP+DEL flush with stdin RESTORE on release; Redis DEBUG SLEEP;
+   Postgres held-connection pressure; HTTP load. Sustained cache-wipe observable via
+   `retentionHitRate`.
+4. ~~`RealScenarioRunner` mirroring `ScenarioRunner` surface~~ **DONE** — `RealScenarioRunner`
+   (setup/start/refresh/expire/shutdown) + `RealMedusaWorld` (async executeChange/rollback).
+
+## Render Deployment (repo already prepared + pushed)
+- **medusa-config.ts**: added `projectConfig.redisUrl`, `projectConfig.workerMode`
+  (`MEDUSA_WORKER_MODE`), `admin.disable` (`DISABLE_MEDUSA_ADMIN`), `admin.backendUrl`
+  (`MEDUSA_BACKEND_URL`).
+- **backend package.json**: `predeploy` = `medusa db:migrate`; `seed` =
+  `medusa exec ./src/migration-scripts/initial-data-seed.ts`.
+- **Storefront + Change Room `start`** use `next start -p $PORT` (Render injects PORT).
+- **Cloud-aware connection plumbing** (env-first, localhost only as fallback):
+  - `real-probes.ts` → `probePathsFromEnv()` reads `REDIS_URL`/`DATABASE_URL`/
+    `MEDUSA_BACKEND_URL`/`STOREFRONT_URL`/`MEDUSA_PUBLISHABLE_KEY`/`REDIS_CLI`/`PSQL_BIN`.
+  - `real-world.ts` + `real-fault-driver.ts` → redis via `-u $REDIS_URL`, psql via
+    `--dbname $DATABASE_URL`, `http_load` default from `MEDUSA_BACKEND_URL`.
+- **`app/health/route.ts`** → `GET /health` returns `{ ok: true }` (Render healthCheckPath).
+- **`apps/change-room/Dockerfile`** → node:22-bookworm-slim + redis-tools + postgresql-client;
+  **CRITICAL**: build = `pnpm --filter "@change-room/app..." build` (builds the 9
+  `@change-room/*` workspace deps to `dist/` BEFORE the app — they are consumed as
+  compiled `dist/index.js`, so building only the app would fail).
+- **`.dockerignore`** → excludes `**/.env*` (except templates), node_modules, .next,
+  dist, .medusa so local secrets/localhost never bake into the change-room image.
+- **`render.yaml`** Blueprint: change-room (Docker) + change-room-medusa (server) +
+  change-room-medusa-worker (worker) + change-room-storefront + Postgres `change-room-db`
+  + KeyValue `change-room-redis`, wired via `fromDatabase`/`fromService` (internal URLs).
+- **`REAL_MEDUSA` gate** lives in `app/api/session/route.ts` (mode real-observe vs simulator;
+  `start` picks `startRealWorld` vs `startScenario`).
+
+### Verified (do not regress)
+- `pnpm --filter "@change-room/app..." build` succeeds (8 routes incl. `/health`).
+- `pnpm --filter @dtc/storefront build` succeeds (all dynamic routes compile).
+- `@change-room/state` typecheck + 16 tests pass.
+
+### Render MCP auth
+Global `~/.config/opencode/opencode.json` `mcp.render` uses
+`Authorization: Bearer {env:RENDER_API_KEY}`. Key exists at **User** scope (owner
+`tea-d6lfejh5pdvs73f7qu1g`); opencode must be **restarted from a fresh shell** so the env
+var propagates to the process, or MCP calls fail with `unauthorized`.
