@@ -60,10 +60,12 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384
       - key: MEDUSA_WORKER_MODE
         value: server
       - key: DISABLE_MEDUSA_ADMIN
-        value: "false"
+        value: "true"
       - key: JWT_SECRET
         sync: false
       - key: COOKIE_SECRET
@@ -112,6 +114,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384
       - key: MEDUSA_WORKER_MODE
         value: worker
       - key: DISABLE_MEDUSA_ADMIN
