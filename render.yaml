@@ -55,7 +55,7 @@ services:
     branch: main
     plan: free
     healthCheckPath: /health
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @dtc/backend build && pnpm --filter @dtc/backend predeploy && cd apps/backend/.medusa/server && pnpm install --prod
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @dtc/backend build && pnpm --filter @dtc/backend predeploy && cd apps/backend/.medusa/server && pnpm install --prod
     startCommand: cd apps/backend/.medusa/server && pnpm start
     envVars:
       - key: NODE_ENV
@@ -107,7 +107,7 @@ services:
     repo: https://github.com/louji2308/change-room
     branch: main
     plan: free
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @dtc/backend build && cd apps/backend/.medusa/server && pnpm install --prod
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @dtc/backend build && cd apps/backend/.medusa/server && pnpm install --prod
     startCommand: cd apps/backend/.medusa/server && pnpm start
     envVars:
       - key: NODE_ENV
@@ -139,7 +139,7 @@ services:
     repo: https://github.com/louji2308/change-room
     branch: main
     plan: free
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @dtc/storefront build
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @dtc/storefront build
     startCommand: pnpm --filter @dtc/storefront start
     envVars:
       - key: NODE_ENV
