@@ -72,7 +72,7 @@ const REAL_SCENARIOS: RealScenarioDef[] = [
     name: "Sustained HTTP load",
     description: "Sustained traffic against the storefront raises latency.",
     difficulty: "medium",
-    fault: { kind: "http_load", ttlMs: 90000, params: { url: "http://127.0.0.1:8000", perTick: 4 } },
+    fault: { kind: "http_load", ttlMs: 90000, params: { perTick: 4 } },
     expectedSymptoms: ["traffic/load high", "gateway latency elevated"],
     expectedRecovery: ["scale_service"],
   },

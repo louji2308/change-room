@@ -102,8 +102,25 @@ function envOrDefault(envKey: string, fallback: string): string {
   return process.env[envKey] ?? fallback;
 }
 
-const DEFAULT_REDIS_CLI = envOrDefault("REDIS_CLI_PATH", "C:\\Users\\LOUJAN B\\.dev-infra\\redis\\redis-cli.exe");
-const DEFAULT_PSQL = envOrDefault("PSQL_PATH", "C:\\Users\\LOUJAN B\\.dev-infra\\postgres\\bin\\psql.exe");
+const DEFAULT_REDIS_CLI = envOrDefault("REDIS_CLI", envOrDefault("REDIS_CLI_PATH", "redis-cli"));
+const DEFAULT_PSQL = envOrDefault("PSQL_BIN", envOrDefault("PSQL_PATH", "psql"));
+/** Redis connection args derived from REDIS_URL (or host/port fallbacks). */
+function redisConnArgs(args: string[]): string[] {
+  const url = process.env.REDIS_URL;
+  if (url) return ["-u", url, ...args];
+  const host = process.env.REDIS_HOST ?? "127.0.0.1";
+  const port = process.env.REDIS_PORT ?? "6379";
+  return ["-h", host, "-p", port, ...args];
+}
+/** psql connection args derived from DATABASE_URL (or host/port fallbacks). */
+function pgConnArgs(args: string[]): string[] {
+  const url = process.env.DATABASE_URL;
+  if (url) return ["--dbname", url, ...args];
+  const u = process.env.PG_USER ?? "postgres";
+  const d = process.env.PG_DATABASE ?? "medusa-dtc-starter";
+  const c = ["-h", process.env.PG_HOST ?? "127.0.0.1", "-p", process.env.PG_PORT ?? "5432", "-U", u, "-d", d];
+  return [...c, ...args];
+}
 const DEFAULT_HELD_SQL = "SELECT pg_sleep(60);";
 const DEFAULT_FREE_SQL =
   "SELECT count(*)::int FROM pg_stat_activity WHERE datname = current_database() AND state = 'active';";
@@ -292,7 +309,8 @@ export class RealFaultDriver {
         break;
       }
       case "http_load": {
-        const url = fault.params?.url ?? "http://127.0.0.1:9000/store/products";
+        const base = process.env.MEDUSA_BACKEND_URL ?? "http://127.0.0.1:9000";
+        const url = fault.params?.url ?? `${base}/store/products`;
         const perTick = fault.params?.perTick ?? 4;
         if (!fault.state.httpLoop) {
           const ac = new AbortController();
@@ -335,7 +353,7 @@ export class RealFaultDriver {
   }
 
   private async redis(...args: string[]): Promise<string> {
-    return this.opts.exec(this.opts.redisCli, ["-h", "127.0.0.1", "-p", "6379", ...args]);
+    return this.opts.exec(this.opts.redisCli, redisConnArgs(args));
   }
 
   private async scanKeys(pattern: string): Promise<string[]> {
@@ -365,7 +383,7 @@ export class RealFaultDriver {
       try {
         await new Promise<void>((resolve, reject) => {
           const child = spawn(this.opts.redisCli,
-            ["-h", "127.0.0.1", "-p", "6379", "-x", "RESTORE", key, "0", "REPLACE"],
+            [...redisConnArgs(["-x", "RESTORE", key, "0", "REPLACE"])],
             { windowsHide: true }
           );
           child.stdin.write(dump);
@@ -383,7 +401,7 @@ export class RealFaultDriver {
 
   private async pgActiveSessions(): Promise<number> {
     const sql = this.opts.pgSql?.activeSessions ?? DEFAULT_FREE_SQL;
-    const out = await this.opts.exec(this.opts.psql, ["-tA", "-w", "-c", sql], { env: this.opts.pgEnv });
+    const out = await this.opts.exec(this.opts.psql, pgConnArgs(["-tA", "-w", "-c", sql]), { env: this.opts.pgEnv });
     const n = parseInt(String(out).trim(), 10);
     return Number.isFinite(n) ? n : -1;
   }
@@ -391,7 +409,7 @@ export class RealFaultDriver {
   private async spawnHeldConnection(): Promise<number> {
     const sql = this.opts.pgSql?.heldConnection ?? DEFAULT_HELD_SQL;
     // Spawn detached so the child outlives this process and can be killed by PID.
-    const pid = await this.opts.exec(this.opts.psql, ["-w", "-c", sql], { spawn: true, env: this.opts.pgEnv });
+    const pid = await this.opts.exec(this.opts.psql, pgConnArgs(["-w", "-c", sql]), { spawn: true, env: this.opts.pgEnv });
     return parseInt(String(pid).trim(), 10);
   }
 

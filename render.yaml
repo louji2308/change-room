@@ -1,0 +1,174 @@
+# Render Blueprint — Change Room
+# Manual deployment must work first; this file codifies the infra described in
+# the Change Room Render Deployment Guide. All services share one region.
+
+services:
+  # ---------------------------------------------------------------------------
+  # Change Room control room (Docker — needs redis-tools + psql)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: change-room
+    runtime: docker
+    repo: https://github.com/louji2308/change-room
+    branch: main
+    dockerfilePath: ./apps/change-room/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: REAL_MEDUSA
+        value: "1"
+      - key: REDIS_CLI
+        value: redis-cli
+      - key: PSQL_BIN
+        value: psql
+      - key: MEDUSA_BACKEND_URL
+        fromService:
+          type: web
+          name: change-room-medusa
+          property: host
+      - key: STOREFRONT_URL
+        fromService:
+          type: web
+          name: change-room-storefront
+          property: host
+      - key: MEDUSA_PUBLISHABLE_KEY
+        sync: false
+      - key: REDIS_URL
+        fromDatabase:
+          type: redis
+          name: change-room-redis
+          property: connectionString
+      - key: DATABASE_URL
+        fromDatabase:
+          type: postgres
+          name: change-room-db
+          property: connectionString
+
+  # ---------------------------------------------------------------------------
+  # Medusa backend (server worker mode)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: change-room-medusa
+    runtime: node
+    repo: https://github.com/louji2308/change-room
+    branch: main
+    plan: standard
+    healthCheckPath: /health
+    preDeployCommand: pnpm --filter @dtc/backend predeploy
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @dtc/backend build && cd apps/backend/.medusa/server && pnpm install --prod
+    startCommand: cd apps/backend/.medusa/server && pnpm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MEDUSA_WORKER_MODE
+        value: server
+      - key: DISABLE_MEDUSA_ADMIN
+        value: "false"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: COOKIE_SECRET
+        generateValue: true
+      - key: MEDUSA_BACKEND_URL
+        fromService:
+          type: web
+          name: change-room-medusa
+          property: host
+      - key: STORE_CORS
+        fromService:
+          type: web
+          name: change-room-storefront
+          property: host
+      - key: ADMIN_CORS
+        fromService:
+          type: web
+          name: change-room-medusa
+          property: host
+      - key: AUTH_CORS
+        fromService:
+          type: web
+          name: change-room-storefront
+          property: host
+      - key: DATABASE_URL
+        fromDatabase:
+          type: postgres
+          name: change-room-db
+          property: connectionString
+      - key: REDIS_URL
+        fromDatabase:
+          type: redis
+          name: change-room-redis
+          property: connectionString
+
+  # ---------------------------------------------------------------------------
+  # Medusa worker (background worker mode, admin disabled)
+  # ---------------------------------------------------------------------------
+  - type: worker
+    name: change-room-medusa-worker
+    runtime: node
+    repo: https://github.com/louji2308/change-room
+    branch: main
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @dtc/backend build && cd apps/backend/.medusa/server && pnpm install --prod
+    startCommand: cd apps/backend/.medusa/server && pnpm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MEDUSA_WORKER_MODE
+        value: worker
+      - key: DISABLE_MEDUSA_ADMIN
+        value: "true"
+      - key: JWT_SECRET
+        sync: false
+      - key: COOKIE_SECRET
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          type: postgres
+          name: change-room-db
+          property: connectionString
+      - key: REDIS_URL
+        fromDatabase:
+          type: redis
+          name: change-room-redis
+          property: connectionString
+
+  # ---------------------------------------------------------------------------
+  # Storefront
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: change-room-storefront
+    runtime: node
+    repo: https://github.com/louji2308/change-room
+    branch: main
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @dtc/storefront build
+    startCommand: pnpm --filter @dtc/storefront start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_MEDUSA_BACKEND_URL
+        fromService:
+          type: web
+          name: change-room-medusa
+          property: host
+      - key: NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
+        sync: false
+      - key: NEXT_PUBLIC_DEFAULT_REGION
+        value: dk
+      - key: NEXT_PUBLIC_BASE_URL
+        fromService:
+          type: web
+          name: change-room-storefront
+          property: host
+      - key: NEXT_PUBLIC_STRIPE_KEY
+        sync: false
+
+databases:
+  - name: change-room-db
+    plan: free
+    database: change_room
+    user: change_room
+    ipAllowList: []
+
+  - name: change-room-redis
+    plan: free
+    ipAllowList: []

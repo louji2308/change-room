@@ -110,6 +110,15 @@ function envOrDefault(envKey: string, fallback: string): string {
   return process.env[envKey] ?? fallback;
 }
 
+/** Redis connection args derived from REDIS_URL (or host/port fallbacks). */
+function redisConnArgs(args: string[]): string[] {
+  const url = process.env.REDIS_URL;
+  if (url) return ["-u", url, ...args];
+  const host = process.env.REDIS_HOST ?? "127.0.0.1";
+  const port = process.env.REDIS_PORT ?? "6379";
+  return ["-h", host, "-p", port, ...args];
+}
+
 function exec(cmd: string, args: string[], timeoutMs = 8000): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(cmd, args, { timeout: timeoutMs, windowsHide: true }, (err, stdout) =>
@@ -225,15 +234,15 @@ export class RealMedusaWorld implements WorldSource {
       return { ok: false, unmet: [`action ${actionType} is not applicable on the real stack`], health: this.health() };
     }
     const snapshotId = this.store.snapshot().id;
-    const redisCli = this.opts.redisCli ?? envOrDefault("REDIS_CLI_PATH", "C:\\Users\\LOUJAN B\\.dev-infra\\redis\\redis-cli.exe");
+    const redisCli = this.opts.redisCli ?? envOrDefault("REDIS_CLI", envOrDefault("REDIS_CLI_PATH", "redis-cli"));
     try {
       let flushedKeys: Array<{ key: string; dump: string }> | undefined;
       if (actionType === "restart_cache") {
         try {
-          await exec(redisCli, ["-h", "127.0.0.1", "-p", "6379", "DEBUG", "RELOAD"]);
+          await exec(redisCli, redisConnArgs(["DEBUG", "RELOAD"]));
         } catch {
           flushedKeys = await this.captureAndFlushMedusaKeys(redisCli);
-          await exec(redisCli, ["-h", "127.0.0.1", "-p", "6379", "CONFIG", "SET", "maxmemory-policy", "allkeys-lru"]).catch(() => {});
+          await exec(redisCli, redisConnArgs(["CONFIG", "SET", "maxmemory-policy", "allkeys-lru"])).catch(() => {});
         }
       }
       this.undoFrame = { snapshotId, kpis: toBusinessKpis(this.lastProbe.kpis), flushedKeys };
@@ -262,14 +271,14 @@ export class RealMedusaWorld implements WorldSource {
     if (!f) return { ok: false, unmet: ["no executed change to roll back"], health: this.health() };
     this.store.restore({ id: f.snapshotId } as never);
     if (f.flushedKeys && f.flushedKeys.length > 0) {
-      const redisCli = this.opts.redisCli ?? envOrDefault("REDIS_CLI_PATH", "C:\\Users\\LOUJAN B\\.dev-infra\\redis\\redis-cli.exe");
+      const redisCli = this.opts.redisCli ?? envOrDefault("REDIS_CLI", envOrDefault("REDIS_CLI_PATH", "redis-cli"));
       await this.restoreKeys(redisCli, f.flushedKeys).catch(() => {});
     }
     return { ok: true, unmet: [], health: this.health() };
   }
 
   private async scanKeys(redisCli: string, pattern: string): Promise<string[]> {
-    const output = await exec(redisCli, ["-h", "127.0.0.1", "-p", "6379", "--scan", "--pattern", pattern]);
+    const output = await exec(redisCli, redisConnArgs(["--scan", "--pattern", pattern]));
     return output.split("\n").filter((l) => l.trim().length > 0);
   }
 
@@ -278,14 +287,14 @@ export class RealMedusaWorld implements WorldSource {
     const dumps: Array<{ key: string; dump: string }> = [];
     for (const key of keys) {
       try {
-        const dump = await exec(redisCli, ["-h", "127.0.0.1", "-p", "6379", "DUMP", key]);
+        const dump = await exec(redisCli, redisConnArgs(["DUMP", key]));
         dumps.push({ key, dump: dump.trim() });
       } catch {
         /* key may have expired between scan and dump */
       }
     }
     if (keys.length > 0) {
-      await exec(redisCli, ["-h", "127.0.0.1", "-p", "6379", "DEL", ...keys]).catch(() => {});
+      await exec(redisCli, redisConnArgs(["DEL", ...keys])).catch(() => {});
     }
     return dumps;
   }
@@ -295,7 +304,7 @@ export class RealMedusaWorld implements WorldSource {
       try {
         await new Promise<void>((resolve, reject) => {
           const child = spawn(redisCli,
-            ["-h", "127.0.0.1", "-p", "6379", "-x", "RESTORE", key, "0", "REPLACE"],
+            [...redisConnArgs(["-x", "RESTORE", key, "0", "REPLACE"])],
             { windowsHide: true }
           );
           child.stdin.write(dump);

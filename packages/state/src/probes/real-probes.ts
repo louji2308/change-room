@@ -11,9 +11,10 @@
  * `MetricSeries` and `BusinessKpis` so downstream consumers (agent, verdict
  * engine) can consume them unchanged.
  *
- * Dependency-free: this shells out to the CLI tools installed in
- * `C:\Users\LOUJAN B\.dev-infra` (redis-cli, psql) and uses the global
- * `fetch` for HTTP probes, so the `state` package needs no extra client libs.
+ * Dependency-free: this shells out to redis-cli / psql (resolved from
+ * `REDIS_CLI`/`PSQL_BIN` or the local dev binaries via `probePathsFromEnv`)
+ * and uses the global `fetch` for HTTP probes, so the `state` package needs no
+ * extra client libs.
  */
 
 import { execFile } from "node:child_process";
@@ -41,20 +42,73 @@ export interface ProbePaths {
   publishableApiKey?: string;
 }
 
-/** Reasonable defaults matching the local dev stack (env-var overridable). */
-export const DEFAULT_PROBE_PATHS: ProbePaths = {
-  redisCli: process.env.REDIS_CLI_PATH ?? "C:\\Users\\LOUJAN B\\.dev-infra\\redis\\redis-cli.exe",
-  redisHost: process.env.REDIS_HOST ?? "127.0.0.1",
-  redisPort: Number(process.env.REDIS_PORT ?? "6379"),
-  psql: process.env.PSQL_PATH ?? "C:\\Users\\LOUJAN B\\.dev-infra\\postgres\\bin\\psql.exe",
-  pgHost: process.env.PG_HOST ?? "127.0.0.1",
-  pgPort: Number(process.env.PG_PORT ?? "5432"),
-  pgUser: process.env.PG_USER ?? "postgres",
-  pgPassword: process.env.PG_PASSWORD ?? "postgres",
-  pgDatabase: process.env.PG_DATABASE ?? "medusa-dtc-starter",
-  backendUrl: process.env.BACKEND_URL ?? "http://localhost:9000",
-  storefrontUrl: process.env.STOREFRONT_URL ?? "http://localhost:8000",
-};
+/**
+ * Build `ProbePaths` from cloud connection URLs. Prefers the full connection
+ * strings used on Render:
+ *
+ *   REDIS_URL            redis://[user:pass@]host:port
+ *   DATABASE_URL         postgres://user:pass@host:port/db
+ *   MEDUSA_BACKEND_URL   backend HTTP base
+ *   STOREFRONT_URL       storefront HTTP base
+ *   MEDUSA_PUBLISHABLE_KEY
+ *   REDIS_CLI            redis-cli executable (default "redis-cli")
+ *   PSQL_BIN             psql executable (default "psql")
+ *
+ * Falls back, component-by-component, to the legacy per-field env vars
+ * (REDIS_HOST/PORT, PG_*, BACKEND_URL, STOREFRONT_URL) and then to the local
+ * dev defaults. Never throws: a malformed URL degrades to its fallbacks.
+ */
+export function probePathsFromEnv(): ProbePaths {
+  const parseRedis = (url?: string): { host: string; port: number } | null => {
+    if (!url) return null;
+    try {
+      const u = new URL(url);
+      const port = u.port ? Number(u.port) : 6379;
+      return { host: u.hostname, port: Number.isFinite(port) ? port : 6379 };
+    } catch {
+      return null;
+    }
+  };
+  const parsePg = (url?: string) => {
+    if (!url) return null;
+    try {
+      const u = new URL(url);
+      const port = u.port ? Number(u.port) : 5432;
+      return {
+        host: u.hostname,
+        port: Number.isFinite(port) ? port : 5432,
+        user: decodeURIComponent(u.username || "") || undefined,
+        password: decodeURIComponent(u.password || "") || undefined,
+        database: u.pathname.replace(/^\//, "") || undefined,
+      };
+    } catch {
+      return null;
+    }
+  };
+  const redis = parseRedis(process.env.REDIS_URL);
+  const pg = parsePg(process.env.DATABASE_URL);
+  return {
+    redisCli: process.env.REDIS_CLI ?? process.env.REDIS_CLI_PATH ?? "redis-cli",
+    redisHost: redis?.host ?? process.env.REDIS_HOST ?? "127.0.0.1",
+    redisPort: redis?.port ?? Number(process.env.REDIS_PORT ?? "6379"),
+    psql: process.env.PSQL_BIN ?? process.env.PSQL_PATH ?? "psql",
+    pgHost: pg?.host ?? process.env.PG_HOST ?? "127.0.0.1",
+    pgPort: pg?.port ?? Number(process.env.PG_PORT ?? "5432"),
+    pgUser: pg?.user ?? process.env.PG_USER ?? "postgres",
+    pgPassword: pg?.password ?? process.env.PG_PASSWORD ?? "postgres",
+    pgDatabase: pg?.database ?? process.env.PG_DATABASE ?? "medusa-dtc-starter",
+    backendUrl: process.env.MEDUSA_BACKEND_URL ?? process.env.BACKEND_URL ?? "http://localhost:9000",
+    storefrontUrl: process.env.STOREFRONT_URL ?? "http://localhost:8000",
+    publishableApiKey: process.env.MEDUSA_PUBLISHABLE_KEY ?? process.env.PUBLISHABLE_API_KEY,
+  };
+}
+
+/**
+ * Reasonable defaults matching the local dev stack. Cloud deployments should
+ * set the connection URLs; this resolver reads those first and only falls back
+ * to local/Windows assumptions when the cloud env vars are absent.
+ */
+export const DEFAULT_PROBE_PATHS: ProbePaths = probePathsFromEnv();
 
 /** Structural twin of the simulator's MetricSeries. */
 export interface RealMetricSeries {
