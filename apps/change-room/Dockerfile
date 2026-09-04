@@ -15,7 +15,9 @@ COPY . .
 
 RUN pnpm install --frozen-lockfile
 
-RUN pnpm --filter @change-room/app build
+# Build the @change-room workspace dependency packages first (they are consumed
+# from their compiled dist/ via workspace:*), then the app itself.
+RUN pnpm --filter "@change-room/app..." build
 
 ENV NODE_ENV=production
 

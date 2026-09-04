@@ -1,0 +1,23 @@
+# Local env / secrets — never bake into the image
+**/.env
+**/.env.local
+**/.env.*.local
+!**/.env.template
+
+# Dependencies
+**/node_modules
+**/.next
+**/dist
+**/build
+**/.turbo
+
+# Medusa build output
+**/.medusa
+
+# Local infra / dev tooling
+.dev-infra
+
+# Git / miscellaneous
+.git
+*.log
+.DS_Store
