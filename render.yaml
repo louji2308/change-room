@@ -53,7 +53,7 @@ services:
     runtime: node
     repo: https://github.com/louji2308/change-room
     branch: main
-    plan: 2c-4g
+    plan: free
     healthCheckPath: /health
     buildCommand: pnpm install --frozen-lockfile && pnpm --filter @dtc/backend build && pnpm --filter @dtc/backend predeploy && cd apps/backend/.medusa/server && pnpm install --prod
     startCommand: cd apps/backend/.medusa/server && pnpm start
@@ -106,7 +106,7 @@ services:
     runtime: node
     repo: https://github.com/louji2308/change-room
     branch: main
-    plan: 2c-4g
+    plan: free
     buildCommand: pnpm install --frozen-lockfile && pnpm --filter @dtc/backend build && cd apps/backend/.medusa/server && pnpm install --prod
     startCommand: cd apps/backend/.medusa/server && pnpm start
     envVars:
