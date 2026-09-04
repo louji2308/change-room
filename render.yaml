@@ -65,9 +65,9 @@ services:
       - key: DISABLE_MEDUSA_ADMIN
         value: "false"
       - key: JWT_SECRET
-        generateValue: true
+        sync: false
       - key: COOKIE_SECRET
-        generateValue: true
+        sync: false
       - key: MEDUSA_BACKEND_URL
         fromService:
           type: web
