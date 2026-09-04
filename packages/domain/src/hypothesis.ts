@@ -23,9 +23,13 @@ export interface Hypothesis {
   basis: string[];
 }
 
+/** Monotonic counter guaranteeing a unique auto-generated id per process, even
+ *  when many hypotheses are created within the same millisecond. */
+let hypCounter = 0;
+
 export function createHypothesis(partial: Partial<Hypothesis> & { cause: string; confidence: number }): Hypothesis {
   return {
-    id: partial.id ?? `hyp_${Date.now()}`,
+    id: partial.id ?? `hyp_${Date.now()}_${++hypCounter}`,
     cause: partial.cause,
     confidence: partial.confidence,
     supporting: partial.supporting ?? [],

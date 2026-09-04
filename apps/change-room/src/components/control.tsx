@@ -192,17 +192,19 @@ export function DelegationPanel({ view }: { view: View }) {
 
       <div className="stack" style={{ marginTop: "1rem" }}>
         <div className="row" style={{ gap: "0.75rem", flexWrap: "wrap" }}>
-          <label className="row" style={{ gap: "0.4rem" }}>
+          <label className="row" style={{ gap: "0.4rem" }} htmlFor="delegation-ceiling">
             <span className="text-faint" style={{ fontSize: 12 }}>ceiling</span>
-            <select className="button" value={ceiling} onChange={(e) => setCeiling(e.target.value)} aria-label="Risk ceiling">
+            <select id="delegation-ceiling" name="risk-ceiling" className="button" value={ceiling} onChange={(e) => setCeiling(e.target.value)} aria-label="Risk ceiling">
               <option value="low">low</option>
               <option value="medium">medium</option>
               <option value="high">high</option>
             </select>
           </label>
-          <label className="row" style={{ gap: "0.4rem" }}>
+          <label className="row" style={{ gap: "0.4rem" }} htmlFor="delegation-duration">
             <span className="text-faint" style={{ fontSize: 12 }}>duration (ms)</span>
             <input
+              id="delegation-duration"
+              name="delegation-duration"
               className="button"
               style={{ width: 96 }}
               type="number"
@@ -211,8 +213,8 @@ export function DelegationPanel({ view }: { view: View }) {
               aria-label="Delegation duration milliseconds"
             />
           </label>
-          <label className="row" style={{ gap: "0.4rem" }}>
-            <input type="checkbox" checked={reversibleOnly} onChange={(e) => setReversibleOnly(e.target.checked)} />
+          <label className="row" style={{ gap: "0.4rem" }} htmlFor="delegation-reversible">
+            <input id="delegation-reversible" name="reversible-only" type="checkbox" checked={reversibleOnly} onChange={(e) => setReversibleOnly(e.target.checked)} />
             <span style={{ fontSize: 13 }}>reversible only</span>
           </label>
         </div>

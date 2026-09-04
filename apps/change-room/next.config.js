@@ -17,6 +17,16 @@ const nextConfig = {
     "@change-room/verification",
     "@change-room/webmcp",
   ],
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "Origin-Agent-Cluster", value: "?1" },
+        ],
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;

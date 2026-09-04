@@ -1,87 +1,151 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { WebmcpRegistry, registerWithWebmcp, emitToolChange } from "@change-room/webmcp";
-import { TOOLS } from "@change-room/webmcp";
-import type { ToolName, WorkflowState } from "@change-room/domain";
+import {
+  WebmcpRegistry,
+  registerWithWebmcp,
+  syncRegisteredTools,
+  webmcpAvailable,
+} from "@change-room/webmcp";
+import type { WorkflowState } from "@change-room/domain";
 
 /**
- * Registers Change Room's semantic tool surface with a WebMCP host in the
- * browser (feature-detected: `document.modelContext`). Each tool's `execute`
- * is forwarded to the server `/api/tools` endpoint, which enforces schema,
- * workflow-state availability and the Change Control boundary — identical to
- * the in-page runtime. Availability changes are broadcast via `toolchange`.
+ * Registers Change Room's semantic tool surface with the native WebMCP host
+ * (`document.modelContext`) when available, and keeps the set of registered
+ * tools in sync as the workflow state advances.
  *
- * When the host is absent (regular browser), this is a safe no-op.
+ * Lifecycle:
+ *   1. Mount → startup probe with retries (host may attach after hydration)
+ *   2. Poll `/api/session` every ~2 s → `registry.discover()` → `syncRegisteredTools()`
+ *   3. Browser fires native `toolchange` on every add/remove
+ *   4. Cleanup → abort all outstanding AbortControllers
  */
 export default function WebMCP() {
   const workflowRef = useRef<WorkflowState>("IDLE");
-  const registeredRef = useRef(false);
+  const registryRef = useRef<WebmcpRegistry | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
+  // ── 1. Mount: probe + initial registration ────────────────────────────
   useEffect(() => {
-    if (typeof document === "undefined" || !(document as any).modelContext) return;
-    let disposed = false;
+    if (typeof document === "undefined") return;
 
     const runtime = {
       workflowState: () => workflowRef.current,
-      execute: async (name: ToolName, args: Record<string, unknown>) => {
+      execute: async (name: string, args: Record<string, unknown>) => {
         const res = await fetch("/api/tools", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name, args }),
         });
         const json = await res.json();
-        if (!res.ok) return { ok: false, error: json.error, validation: json.validation };
+        if (!res.ok)
+          return { ok: false, error: json.error, validation: json.validation };
         return { ok: true, data: json.data };
       },
     };
 
     const registry = new WebmcpRegistry(runtime);
-    registerWithWebmcp(registry).then((names) => {
-      if (!disposed && names.length > 0) {
-        registeredRef.current = true;
-        // announce current availability after registration
-        emitToolChange();
-        // eslint-disable-next-line no-console
-        console.info(`[Change Room] registered ${names.length} WebMCP tools`);
-      }
-    });
+    registryRef.current = registry;
 
-    // expose a small debug hook for DevTools evaluation
+    const MAX_ATTEMPTS = 10;
+    const INTERVAL_MS = 300;
+    let attempt = 0;
+    let disposed = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    async function tryRegister() {
+      attempt++;
+      if (disposed) return;
+
+      if (!webmcpAvailable()) {
+        if (attempt < MAX_ATTEMPTS) return; // wait for next tick
+        // Give up silently — no WebMCP host on this page
+        if (timer) clearInterval(timer);
+        return;
+      }
+
+      if (timer) clearInterval(timer);
+
+      try {
+        const names = await registerWithWebmcp(registry);
+        if (!disposed && names.length > 0) {
+          // eslint-disable-next-line no-console
+          console.info(
+            `[Change Room] registered ${names.length} WebMCP tools`,
+          );
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[Change Room] initial WebMCP registration failed:", err);
+      }
+    }
+
+    // Kick off first attempt immediately, then retry on interval
+    tryRegister();
+    timer = setInterval(() => tryRegister(), INTERVAL_MS);
+
+    // expose debug hook
     (window as any).__changeRoomWebmcp = {
-      tools: TOOLS,
       registry,
       setWorkflow: (s: WorkflowState) => {
         workflowRef.current = s;
-        emitToolChange();
+        // Trigger a re-sync on the next poll tick
+        sync();
       },
     };
 
     return () => {
       disposed = true;
+      if (timer) clearInterval(timer);
+      abortRef.current?.abort();
+      registryRef.current = null;
       delete (window as any).__changeRoomWebmcp;
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync the current workflow state into the ref so `toolchange` reflects it.
-  useEffect(() => {
-    async function sync() {
-      try {
-        const res = await fetch("/api/session", { cache: "no-store" });
-        const json = await res.json();
-        const state = json.view?.workflow as WorkflowState | undefined;
-        if (state && state !== workflowRef.current) {
-          workflowRef.current = state;
-          emitToolChange();
-        }
-      } catch {
-        // ignore transient poll failures
+  // ── 2. Poll session + dynamic sync ────────────────────────────────────
+  async function sync() {
+    const registry = registryRef.current;
+    if (!registry) return;
+
+    try {
+      const res = await fetch("/api/session", { cache: "no-store" });
+      const json = await res.json();
+      const state = json.view?.workflow as WorkflowState | undefined;
+      if (!state) return;
+
+      if (state !== workflowRef.current) {
+        workflowRef.current = state;
       }
+
+      // Use registry.discover() — already encodes static state + authority gates
+      const desired = registry
+        .discover()
+        .filter((t) => t.available)
+        .map((t) => t.name);
+
+      // Delegate add/remove to syncRegisteredTools; browser fires toolchange natively
+      const result = await syncRegisteredTools(registry, desired);
+
+      if (result.errors.length > 0) {
+        for (const e of result.errors) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[Change Room] WebMCP tool sync error for '${e.name}':`,
+            e.error,
+          );
+        }
+      }
+    } catch {
+      // Transient poll failure — ignore
     }
+  }
+
+  useEffect(() => {
     const t = setInterval(sync, 2000);
     sync();
     return () => clearInterval(t);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;
 }

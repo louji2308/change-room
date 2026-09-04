@@ -226,7 +226,7 @@ Tool registration is spec-compliant: each tool's `inputSchema` is a standard JSO
 
 Quick overview:
 
-- **In-browser agents:** open the Change Room app in a WebMCP-capable browser. `apps/change-room/src/components/WebMCP.tsx` feature-detects `document.modelContext` and registers all tools; each tool forwards `execute` to `POST /api/tools`. A `toolchange` event is emitted whenever the workflow state changes (so availability follows state).
+- **In-browser agents:** open the Change Room app in a WebMCP-capable browser. `apps/change-room/src/components/WebMCP.tsx` feature-detects `document.modelContext` and registers the currently-allowed semantic tools, keeping the native registered set in sync with the workflow state (unregistering/registering tools as they enter/leave the allowed set); the browser fires the native `toolchange` event when the set changes. Each tool forwards `execute` to `POST /api/tools`.
 - **Remote/server agents:** invoke `POST /api/tools` with `{ "name": "<tool>", "args": {...} }`. Enforcement (schema, state availability, read-only guarantees, Change Control for mutations) runs server-side through `WebmcpRegistry`.
 - The tool surface is defined in `packages/webmcp/src/tools.ts` and enforced in `packages/webmcp/src/registry.ts`; the browser adapter lives in `packages/webmcp/src/adapter.ts`; the server endpoint is `apps/change-room/src/app/api/tools/route.ts`.
 

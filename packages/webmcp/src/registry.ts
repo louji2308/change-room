@@ -50,8 +50,20 @@ export class WebmcpRegistry {
     return true;
   }
 
-  /** List all tools (V1 + V2) with their availability in the current context. */
-  discover(): Array<{ name: WebmcpToolName; description: string; inputSchema: JsonSchemaObject; readOnly: boolean; group: string; available: boolean }> {
+  /**
+   * List all tools (V1 + V2) with their availability in the current context.
+   * Includes native WebMCP `annotations` for each tool so callers can forward
+   * them when registering with `document.modelContext.registerTool`.
+   */
+  discover(): Array<{
+    name: WebmcpToolName;
+    description: string;
+    inputSchema: JsonSchemaObject;
+    readOnly: boolean;
+    group: string;
+    available: boolean;
+    annotations: { readOnlyHint: boolean; consequentialHint: boolean; untrustedContentHint: boolean };
+  }> {
     const state = this.runtime.workflowState();
     return ALL_TOOLS.map((t) => ({
       name: t.name,
@@ -60,6 +72,7 @@ export class WebmcpRegistry {
       readOnly: t.readOnly,
       group: t.group,
       available: this.dynamicAvailable(t, state),
+      annotations: nativeAnnotations(t),
     }));
   }
 
@@ -166,6 +179,22 @@ function typeMatches(type: JsonSchemaField["type"], value: unknown): boolean {
     default:
       return true;
   }
+}
+
+/**
+ * Native WebMCP annotations derived from a tool definition.
+ * - `readOnlyHint`: read-only tools are safe side-effect-free operations.
+ * - `consequentialHint`: mutation tools (execute_change, rollback_change) are
+ *   consequential; agents must treat them with extra caution.
+ * - `untrustedContentHint`: false — all tool output originates from the trusted
+ *   Change Room runtime.
+ */
+export function nativeAnnotations(def: { readOnly: boolean }) {
+  return {
+    readOnlyHint: def.readOnly,
+    consequentialHint: !def.readOnly,
+    untrustedContentHint: false,
+  };
 }
 
 export { TOOLS, ALL_TOOLS, getTool, toolAvailableInState };

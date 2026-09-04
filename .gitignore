@@ -75,3 +75,7 @@ Desktop.ini
 verify-defender-exclusion.cmd
 add-change-room-exclusion.cmd
 add-defender-exclusions.cmd
+
+# logs
+cr-dev.err.log
+cr-dev.log

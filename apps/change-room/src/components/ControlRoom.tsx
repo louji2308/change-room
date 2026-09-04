@@ -167,6 +167,8 @@ export default function ControlRoom() {
 
   const start = (
     <select
+      id="scenario-select"
+      name="scenario"
       aria-label="Scenario"
       className="button"
       defaultValue="cache-failure"

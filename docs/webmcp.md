@@ -24,16 +24,21 @@ Fourteen tools, defined in `packages/webmcp/src/tools.ts`, grouped by intent:
 - `invoke(name, args)` — enforces, in order: tool-known → state-available → input-schema valid → runtime execution.
 - `validate(name, args)` — strict schema validation (missing / unknown / wrong-type fields rejected).
 
-`packages/webmcp/src/adapter.ts` is the browser adapter. It feature-detects the WebMCP host API on `document.modelContext`:
+`packages/webmcp/src/adapter.ts` is the browser adapter. It feature-detects the native WebMCP API on `document.modelContext`:
 
 ```ts
-document.modelContext.registerTool({
-  name, description, inputSchema,
-  execute: async (input) => { /* forwarded to the application, enforced by the registry */ },
-});
+const controller = new AbortController();
+document.modelContext.registerTool(
+  { name, description, inputSchema, annotations },
+  { signal: controller.signal }
+);
 ```
 
-If the host is absent (a regular browser), registration is a **safe no-op** and the app still works. When the workflow state advances, an `emitEvent("toolchange")` broadcast tells WebMCP-aware clients to re-discover availability.
+The native surface is `registerTool(tool, {signal})`, `getTools()`, `executeTool(tool, inputObject)`, and `ontoolchange` / `addEventListener("toolchange")`.
+
+Availability changes are implemented by changing the registered-tool set — tools that leave the allowed set are unregistered via their `AbortSignal`, and new tools are registered. The **browser itself** fires the native `toolchange` event when the set changes; the page does **not** call any `emitEvent` method.
+
+If the host is absent (a regular browser), registration is a **safe no-op** and the app still works.
 
 ## How a WebMCP agent connects
 
@@ -42,10 +47,10 @@ There are two equivalent entry points; both funnel through the same `WebmcpRegis
 ### 1. From inside a WebMCP-capable browser (the demo path)
 
 1. Open the Change Room app at `http://localhost:3000`.
-2. `apps/change-room/src/components/WebMCP.tsx` detects `document.modelContext`, registers all 14 tools, and announces them (`console.info("[Change Room] registered N WebMCP tools")`).
-3. Each registered tool's `execute` POSTs to the server endpoint `POST /api/tools` with `{ name, args }`.
-4. The server runs the same `WebmcpRegistry` (via the session's tool runtime) so permission/state/schema rules always apply.
-5. A poller keeps the registry's `workflowState` in sync and emits `toolchange` every time it moves.
+2. `apps/change-room/src/components/WebMCP.tsx` detects `document.modelContext`, registers currently-allowed tools, and keeps the native registered set in sync with the workflow state.
+3. Tools that leave the allowed set are unregistered (via their `AbortSignal`), so `getTools()` always reflects the current capability surface.
+4. Each registered tool's `execute` POSTs to the server endpoint `POST /api/tools` with `{ name, args }`.
+5. The server runs the same `WebmcpRegistry` (via the session's tool runtime) so permission/state/schema rules always apply.
 
 ### 2. From a remote agent (HTTP)
 
@@ -67,6 +72,22 @@ Responses are always `{ ok: true, data }` or `{ ok: false, error, validation? }`
 
 A full workflow therefore looks like: `inspect_system → investigate → get_evidence → generate_plans → compare_plans → simulate_plan → prepare_change → validate_policy → request_human_decision → (human approves in the UI) → execute_change → verify_change`. Mutations (`execute_change`, `rollback_change`) also require approval authority from the Change Control layer — the agent cannot self-approve.
 
+## Native deployment requirements
+
+1. **Origin-keyed agent cluster:** The document must be served with `Origin-Agent-Cluster: ?1`. Without it, `registerTool`/`getTools`/`executeTool` are rejected with a `SecurityError`. This header is configured in `apps/change-room/next.config.js` and applied to all routes.
+2. **`tools` Permissions Policy:** Registration is disabled by default in cross-origin iframes unless delegated via `allow="tools"`. For a top-level document, ensure no restrictive `Permissions-Policy` header blocks `tools`.
+
+## Testing WebMCP
+
+WebMCP is only exposed in WebMCP-capable clients. Ordinary Chrome does not expose `document.modelContext`.
+
+1. **ChatGPT desktop app** → built-in browser → open the app URL → look for "Site Tools" in the chat interface.
+2. **Chrome with WebMCP enabled** (origin trial or experimental flag) → open DevTools console → run:
+   ```js
+   typeof document.modelContext          // should be "object"
+   await document.modelContext.getTools() // returns registered tools
+   ```
+
 ## Safety rules
 
 - **Blind mode:** no tool response ever contains seed, disturbance lists, scenario ids, or ground truth. The session guarantees this (`apps/change-room/src/lib/session.ts`).
@@ -79,7 +100,7 @@ A full workflow therefore looks like: `inspect_system → investigate → get_ev
 |---------|----------|
 | Tool definitions + state availability | `packages/webmcp/src/tools.ts` |
 | Enforcement registry (`WebmcpRegistry`) | `packages/webmcp/src/registry.ts` |
-| Browser registration + `toolchange` | `packages/webmcp/src/adapter.ts` |
+| Browser registration + `getTools`/`executeTool`/`toolchange` | `packages/webmcp/src/adapter.ts` |
 | Server tool endpoint | `apps/change-room/src/app/api/tools/route.ts` |
 | Client adapter wiring | `apps/change-room/src/components/WebMCP.tsx` |
 | Session tool runtime (`asToolRuntime`) | `apps/change-room/src/lib/session.ts` |
