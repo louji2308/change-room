@@ -11,6 +11,7 @@ services:
     runtime: docker
     repo: https://github.com/louji2308/change-room
     branch: main
+    plan: free
     dockerfilePath: ./apps/change-room/Dockerfile
     healthCheckPath: /health
     envVars:
@@ -35,13 +36,12 @@ services:
       - key: MEDUSA_PUBLISHABLE_KEY
         sync: false
       - key: REDIS_URL
-        fromDatabase:
-          type: redis
+        fromService:
+          type: keyvalue
           name: change-room-redis
           property: connectionString
       - key: DATABASE_URL
         fromDatabase:
-          type: postgres
           name: change-room-db
           property: connectionString
 
@@ -53,10 +53,9 @@ services:
     runtime: node
     repo: https://github.com/louji2308/change-room
     branch: main
-    plan: standard
+    plan: free
     healthCheckPath: /health
-    preDeployCommand: pnpm --filter @dtc/backend predeploy
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @dtc/backend build && cd apps/backend/.medusa/server && pnpm install --prod
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @dtc/backend build && pnpm --filter @dtc/backend predeploy && cd apps/backend/.medusa/server && pnpm install --prod
     startCommand: cd apps/backend/.medusa/server && pnpm start
     envVars:
       - key: NODE_ENV
@@ -91,12 +90,11 @@ services:
           property: host
       - key: DATABASE_URL
         fromDatabase:
-          type: postgres
           name: change-room-db
           property: connectionString
       - key: REDIS_URL
-        fromDatabase:
-          type: redis
+        fromService:
+          type: keyvalue
           name: change-room-redis
           property: connectionString
 
@@ -108,6 +106,7 @@ services:
     runtime: node
     repo: https://github.com/louji2308/change-room
     branch: main
+    plan: free
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @dtc/backend build && cd apps/backend/.medusa/server && pnpm install --prod
     startCommand: cd apps/backend/.medusa/server && pnpm start
     envVars:
@@ -123,12 +122,11 @@ services:
         sync: false
       - key: DATABASE_URL
         fromDatabase:
-          type: postgres
           name: change-room-db
           property: connectionString
       - key: REDIS_URL
-        fromDatabase:
-          type: redis
+        fromService:
+          type: keyvalue
           name: change-room-redis
           property: connectionString
 
@@ -140,6 +138,7 @@ services:
     runtime: node
     repo: https://github.com/louji2308/change-room
     branch: main
+    plan: free
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @dtc/storefront build
     startCommand: pnpm --filter @dtc/storefront start
     envVars:
@@ -162,13 +161,17 @@ services:
       - key: NEXT_PUBLIC_STRIPE_KEY
         sync: false
 
+  # ---------------------------------------------------------------------------
+  # Redis-compatible Key Value store (internal only)
+  # ---------------------------------------------------------------------------
+  - type: keyvalue
+    name: change-room-redis
+    plan: free
+    ipAllowList: []
+
 databases:
   - name: change-room-db
     plan: free
-    database: change_room
+    databaseName: change_room
     user: change_room
-    ipAllowList: []
-
-  - name: change-room-redis
-    plan: free
     ipAllowList: []
