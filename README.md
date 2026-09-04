@@ -14,11 +14,18 @@ Change Room is a human-agent operational decision and change control system: a s
 
 This repository is built on top of the [Medusa DTC Starter](https://github.com/medusajs/dtc-starter) (Medusa v2 + Next.js storefront). The e-commerce system is the **controlled experimental environment**; Change Room itself is the operational intelligence / control layer that surrounds it.
 
+## Try it live
+
+- **Live app:** **https://change-room.onrender.com** — the control room is deployed on Render, running in **real-observe** mode against the real Medusa stack, with a real LLM (NVIDIA `deepseek-ai/deepseek-v4-flash-0731`) driving the advisory.
+- **WebMCP for agents:** open the live app in a WebMCP-capable browser (Chrome 149+ with `chrome://flags/#enable-webmcp-testing`, or ChatGPT's in-app browser). The page registers the currently-allowed semantic tools on `document.modelContext` and the browser fires the native `toolchange` event as the workflow state advances. Server-side, the same tools are reachable via `POST /api/tools` with `{ "name": "...", "args": {...} }`.
+- **Try a scenario:** pick a scenario in the **Controls** bar and step the workflow: `reason → simulate → approve → execute → verify → recover`. Start in a WebMCP-capable browser — you will see **`execute_change` appear in the agent's tool list only after you approve the change**, then watch the human-agent loop run and the `HEALTHY` verdict come back.
+
 ---
 
 ## Table of contents
 
 - [What Change Room is](#what-change-room-is)
+- [Try it live](#try-it-live)
 - [Architecture at a glance](#architecture-at-a-glance)
 - [Repository layout](#repository-layout)
 - [Prerequisites](#prerequisites)
@@ -183,7 +190,22 @@ From the repo root, `pnpm dev` runs all three apps (backend, storefront, change-
 
 ### Change Room app (`apps/change-room`)
 
-None required. The app and its simulator run fully in-memory.
+None required to run in the simulator. Optional variables enable real-observation mode and a real LLM for the advisory:
+
+| Variable | Description |
+|----------|-------------|
+| `REAL_MEDUSA` | `"1"` to observe/operate the **real Medusa stack** (real probes + real fault scenarios) instead of the in-memory simulator |
+| `MEDUSA_BACKEND_URL` | Backend base URL for real probes (e.g. `http://localhost:9000`, or `https://change-room-medusa.onrender.com`) |
+| `STOREFRONT_URL` | Storefront URL for real probes (e.g. `http://localhost:8000`) |
+| `DATABASE_URL` | Postgres connection string for real DB probes |
+| `REDIS_URL` | Redis connection string for real cache probes |
+| `MEDUSA_PUBLISHABLE_KEY` | Publishable key forwarded as `x-publishable-api-key` on store endpoints |
+| `OPENAI_API_KEY` | First-choice LLM provider for the advisory (uses `gpt-4o-mini`) |
+| `LLM_NVIDIA_API_KEY` | NVIDIA NIM API key → `deepseek-ai/deepseek-v4-flash-0731` |
+| `LLM_MISTRAL_API_KEY` | Mistral API key → `mistral-large-latest` |
+| `LLM_OPENROUTER_API_KEY` | OpenRouter API key → `deepseek/deepseek-chat` |
+
+If **no** LLM key is present the advisory falls back to a deterministic mock (`isMock: true`) — the app is fully honest about whether the advisory came from a real model. The provider chain is OpenAI → NVIDIA → Mistral → OpenRouter (first key found wins); see `packages/agent/src/model/providers.ts`.
 
 ### Medusa backend (`apps/backend/.env` — from `apps/backend/.env.template`)
 
@@ -220,7 +242,7 @@ The adapter is a best-effort read: if the API is unreachable it falls back to a 
 
 ## WebMCP instructions
 
-WebMCP is not the product — it is the mechanism through which the web application exposes meaningful capabilities to an AI agent. Change Room registers a small, state-aware semantic tool surface (14 tools) that an agent uses to observe, decide, and act with bounded authority. Every mutation passes through the Change Control layer; nothing agent-facing ever returns hidden ground truth.
+WebMCP is not the product — it is the mechanism through which the web application exposes meaningful capabilities to an AI agent. Change Room registers a state-aware semantic tool surface (17 tools: 14 V1 + 3 V2 — `abstain`, `inspect_decision_memory`, `test_robustness`) that an agent uses to observe, decide, and act with bounded authority. Every mutation passes through the Change Control layer; nothing agent-facing ever returns hidden ground truth.
 
 Tool registration is spec-compliant: each tool's `inputSchema` is a standard JSON Schema object (`type: "object"`, `properties`, `required`, `additionalProperties: false`), `registerTool()` is awaited (it returns `Promise<void>` per the WebMCP spec), and the `execute` callback receives `(input, { signal })` with an `AbortSignal`.
 
@@ -237,6 +259,7 @@ Full instructions, the tool table, and a worked example: **[docs/webmcp.md](docs
 Scenarios are hidden, reproducible, blind operational problems created by perturbing the causal world model — the symptoms *emerge* from the simulation; the scenario engine never writes fake dashboard numbers and never reveals the root cause to the agent.
 
 - Six named scenarios ship in `packages/scenarios/src/registry.ts`: `cache-failure`, `traffic-surge`, `database-saturation`, `bad-deployment`, `queue-backlog`, `configuration-regression`.
+- The app can also run against the **real Medusa stack** in `REAL_MEDUSA` mode (see [Environment variables](#environment-variables)), with real probes and real fault-injection scenarios (`real-scenarios`).
 - In the app, start one via `POST /api/session` `{ "action": "start", "scenarioId": "cache-failure" }` or from the UI.
 - Programmatically, a scenario is `ScenarioRunner.setup(id) → start() → settle()` with a blind `agentView()`, isolated `predict()`, and gated `groundTruth()` (see `packages/scenarios/src/engine.ts`).
 
@@ -251,7 +274,7 @@ pnpm install
 pnpm test
 ```
 
-`pnpm test` runs `turbo test`, which builds each workspace package and executes its Node test suite (the packages use `node --test`). All nine packages are green (120 tests per `Project/Progress.md`).
+`pnpm test` runs `turbo test`, which builds each workspace package and executes its Node test suite (the packages use `node --test`). All nine packages are green.
 
 Target a single package:
 

@@ -24,15 +24,9 @@ services:
       - key: PSQL_BIN
         value: psql
       - key: MEDUSA_BACKEND_URL
-        fromService:
-          type: web
-          name: change-room-medusa
-          property: host
+        value: https://change-room-medusa.onrender.com
       - key: STOREFRONT_URL
-        fromService:
-          type: web
-          name: change-room-storefront
-          property: host
+        value: https://change-room-storefront.onrender.com
       - key: MEDUSA_PUBLISHABLE_KEY
         sync: false
       - key: REDIS_URL
@@ -69,25 +63,13 @@ services:
       - key: COOKIE_SECRET
         sync: false
       - key: MEDUSA_BACKEND_URL
-        fromService:
-          type: web
-          name: change-room-medusa
-          property: host
+        value: https://change-room-medusa.onrender.com
       - key: STORE_CORS
-        fromService:
-          type: web
-          name: change-room-storefront
-          property: host
+        value: https://change-room-storefront.onrender.com
       - key: ADMIN_CORS
-        fromService:
-          type: web
-          name: change-room-medusa
-          property: host
+        value: https://change-room-medusa.onrender.com
       - key: AUTH_CORS
-        fromService:
-          type: web
-          name: change-room-storefront
-          property: host
+        value: https://change-room-storefront.onrender.com
       - key: DATABASE_URL
         fromDatabase:
           name: change-room-db
@@ -145,19 +127,13 @@ services:
       - key: NODE_ENV
         value: production
       - key: NEXT_PUBLIC_MEDUSA_BACKEND_URL
-        fromService:
-          type: web
-          name: change-room-medusa
-          property: host
+        value: https://change-room-medusa.onrender.com
       - key: NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
         sync: false
       - key: NEXT_PUBLIC_DEFAULT_REGION
         value: dk
       - key: NEXT_PUBLIC_BASE_URL
-        fromService:
-          type: web
-          name: change-room-storefront
-          property: host
+        value: https://change-room-storefront.onrender.com
       - key: NEXT_PUBLIC_STRIPE_KEY
         sync: false
 

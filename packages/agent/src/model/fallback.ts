@@ -1,7 +1,7 @@
 /**
  * Real-provider AgentModel with automatic fallback.
  *
- * Attempts NVIDIA first (preferred), then Mistral, then OpenRouter. Each
+ * Attempts OpenAI first (preferred), then NVIDIA, then Mistral, then OpenRouter. Each
  * provider is only attempted when its API key is present; a misconfigured or
  * unresponsive provider is skipped (recorded in `trace`) rather than failing
  * the whole call. Throws only when every provider fails.
@@ -24,6 +24,8 @@ export class FallbackAgentModel implements AgentModel {
     this.timeoutMs = env.timeoutMs ?? 60000;
     const keyFor = (name: string): string => {
       switch (name) {
+        case "openai":
+          return env.openaiKey ?? "";
         case "nvidia":
           return env.nvidiaKey ?? "";
         case "mistral":

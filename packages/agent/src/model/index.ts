@@ -2,7 +2,7 @@
  * AgentModel factory + public exports.
  *
  * `loadAgentModel()` chooses:
- *   - a live FallbackAgentModel (NVIDIA -> Mistral -> OpenRouter) when at least
+ *   - a live FallbackAgentModel (OpenAI -> NVIDIA -> Mistral -> OpenRouter) when at least
  *     one provider key is present, OR
  *   - the deterministic MockModel otherwise (graceful offline/no-key fallback).
  *
@@ -32,9 +32,11 @@ export function envFromProcess(): AgentModelEnv {
     return v && v.length > 0 ? v : undefined;
   };
   return {
+    openaiKey: get("OPENAI_API_KEY"),
     nvidiaKey: get("LLM_NVIDIA_API_KEY"),
     mistralKey: get("LLM_MISTRAL_API_KEY"),
     openrouterKey: get("LLM_OPENROUTER_API_KEY"),
+    openaiModel: get("OPENAI_MODEL"),
     nvidiaModel: get("LLM_NVIDIA_MODEL"),
     mistralModel: get("LLM_MISTRAL_MODEL"),
     openrouterModel: get("LLM_OPENROUTER_MODEL"),
